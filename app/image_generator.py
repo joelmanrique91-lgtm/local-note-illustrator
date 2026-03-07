@@ -239,6 +239,7 @@ class ImageGenerator:
             width,
             height,
         )
+        self.logger.info("Prompt used: %s", positive_prompt)
         start = time.perf_counter()
 
         try:
@@ -275,7 +276,11 @@ class ImageGenerator:
 
         image = result.images[0]
         output_path = self._next_output_path(docx_path, image_index, self.config.output_format)
-        image.save(output_path)
+        if self.config.output_format in {"jpg", "jpeg"}:
+            image = image.convert("RGB")
+            image.save(output_path, format="JPEG", quality=90, subsampling=0)
+        else:
+            image.save(output_path)
         elapsed = time.perf_counter() - start
         self.logger.info("Imagen guardada: %s (%.2fs)", output_path, elapsed)
         return output_path
