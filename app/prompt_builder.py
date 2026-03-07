@@ -67,12 +67,39 @@ VISUAL_STRATEGY_DIRECTIVES = {
     "documentary_wide": "documentary wide scene, environmental context first, no close-up faces, realistic reportage",
 }
 
+SPORTS_EDITORIAL_POSITIVE_GUARDRAILS = [
+    "realistic sports editorial coverage",
+    "medium or wide shot",
+    "believable training ground, signing or stadium context",
+    "human subject or clear sports context",
+    "subtle club colors only when naturally present",
+    "no readable text anywhere in frame",
+]
+
+SPORTS_EDITORIAL_NEGATIVE_TERMS = [
+    "badge",
+    "crest",
+    "emblem",
+    "shield logo",
+    "poster",
+    "poster layout",
+    "infographic",
+    "infographic board",
+    "fake typography",
+    "readable text",
+    "visible typography",
+    "jersey logo close-up",
+    "soccer emblem collage",
+    "collage of club symbols",
+]
+
 NEGATIVE_GROUPS = {
     "anatomy": "deformed anatomy, malformed body, broken proportions, extra limbs",
     "hands_face": "deformed hands, extra fingers, duplicate face, asymmetrical eyes, crossed eyes",
     "artificial_look": "plastic skin, uncanny valley, oversaturated colors, fake cinematic glow, artificial render",
     "composition_noise": "chaotic crowd, extreme close-up portrait, cropped face, warped perspective",
     "artifacts": "blurry, low quality, jpeg artifacts, unreadable text, watermark, logo",
+    "sports_editorial": ", ".join(SPORTS_EDITORIAL_NEGATIVE_TERMS),
 }
 
 
@@ -169,10 +196,25 @@ def _extract_keywords(text: str, n: int = 8) -> list[str]:
     return [token for token, _ in freqs.most_common(n)]
 
 
+def _unique_negative_terms(*chunks: str) -> str:
+    terms: list[str] = []
+    seen: set[str] = set()
+    for chunk in chunks:
+        for raw in chunk.split(","):
+            term = raw.strip()
+            if not term:
+                continue
+            key = term.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            terms.append(term)
+    return ", ".join(terms)
+
+
 def compose_negative_prompt(base_negative: str, extra_negative: str = "") -> str:
     grouped = ", ".join(NEGATIVE_GROUPS.values())
-    parts = [grouped, extra_negative.strip(), base_negative.strip()]
-    return ", ".join(item for item in parts if item)
+    return _unique_negative_terms(grouped, extra_negative.strip(), base_negative.strip())
 
 
 def _build_prompt_from_strategy(sections: ArticleSections, profile: StrategyProfile) -> str:
@@ -235,6 +277,7 @@ def build_local_fallback_result(
         composition_notes="local heuristic composition",
         style_notes="local heuristic editorial style",
         confidence=0.45,
+        strategy_adjustment_reason=None,
         fallback_reason=fallback_reason,
         raw_schema_version="local.fallback.v1",
     )
@@ -270,6 +313,9 @@ def compose_prompt_plan(
     ]
     positives = [", ".join(part for part in [prompt, *safe_addons] if part) for prompt in positives]
 
+    if intelligence.domain == "sports_transfers":
+        positives = [", ".join([prompt, *SPORTS_EDITORIAL_POSITIVE_GUARDRAILS]) for prompt in positives]
+
     combined_negative = compose_negative_prompt(
         base_negative=base_negative_prompt,
         extra_negative=intelligence.negative_prompt,
@@ -281,6 +327,7 @@ def compose_prompt_plan(
         strategy_effective=intelligence.visual_strategy,
         domain=intelligence.domain,
         source=intelligence.source,
+        strategy_adjustment_reason=intelligence.strategy_adjustment_reason,
     )
 
 

@@ -137,6 +137,55 @@ class PromptIntelligenceTests(unittest.TestCase):
         self.assertEqual(res.prompt_plan.strategy_effective, "industrial")
         self.assertEqual(res.intelligence.visual_strategy, "industrial")
 
+    def test_sports_transfer_forces_non_infographic_strategy(self) -> None:
+        fake = PromptIntelligenceResult(
+            source="openai",
+            domain="sports_transfers",
+            visual_strategy="infographic_like",
+            human_closeup_risk=1,
+            avoid_close_ups=False,
+            prompt_main="soccer transfer update",
+            prompt_variants=[],
+            negative_prompt="low quality",
+            composition_notes="centered",
+            style_notes="neutral",
+            confidence=0.8,
+            fallback_reason=None,
+            raw_schema_version="openai.v1",
+        )
+
+        with patch("app.prompt_intelligence.OpenAIPromptAssistant.generate_prompt_intelligence", return_value=fake):
+            res = resolve_prompt_plan(
+                text="Lucas Blondel se incorpora a Huracán en este mercado de pases",
+                strategy_override="auto",
+                config=self.config,
+                logger=self.logger,
+                variants=1,
+            )
+
+        self.assertEqual(res.prompt_plan.strategy_effective, "editorial_photo")
+        self.assertIn("domain_policy:sports_transfers", res.intelligence.strategy_adjustment_reason or "")
+        self.assertIn("no readable text anywhere in frame", res.prompt_plan.positive_prompts[0])
+        self.assertIn("badge", res.prompt_plan.negative_prompt)
+
+    def test_local_fallback_sports_prompt_is_editorial(self) -> None:
+        from app.prompt_builder import build_local_fallback_result, compose_prompt_plan
+
+        text = "Lucas Blondel se incorpora a Huracán tras cerrar su fichaje"
+        intelligence = build_local_fallback_result(
+            text=text,
+            strategy_override="auto",
+            base_negative_prompt=self.config.default_negative_prompt,
+            variants=1,
+            fallback_reason="test",
+        )
+        plan = compose_prompt_plan(intelligence, self.config.default_negative_prompt, variants=1)
+
+        self.assertNotEqual(plan.strategy_effective, "infographic_like")
+        self.assertEqual(plan.domain, "sports_transfers")
+        self.assertIn("realistic sports editorial coverage", plan.positive_prompts[0])
+        self.assertIn("readable text", plan.negative_prompt)
+
 
 if __name__ == "__main__":
     unittest.main()

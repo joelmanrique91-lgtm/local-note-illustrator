@@ -127,7 +127,10 @@ class OpenAIPromptAssistant:
             "main prompt, variants, negative prompt, composition notes and style notes. "
             "Prefer realistic editorial visuals and safe SDXL compositions. "
             "Avoid impossible scenes, avoid extreme close-up faces when risk is high, avoid malformed anatomy, "
-            "avoid plastic skin, avoid chaotic crowds unless truly required by context."
+            "avoid plastic skin, avoid chaotic crowds unless truly required by context. "
+            "For sports transfer/club/player news, strongly prefer realistic sports editorial coverage with "
+            "human presence and training/signing/stadium context. Never produce badges, crests, shields, poster layouts, "
+            "infographic boards, visible typography, fake text, jersey logo close-ups, or collage of club symbols."
         )
 
     def _build_user_prompt(self, context: str, variants: int) -> str:
@@ -140,6 +143,8 @@ class OpenAIPromptAssistant:
             "industrial, institutional, documentary_wide. "
             "human_closeup_risk in range 0..10 and confidence in range 0..1. "
             "Use concise English prompts optimized for SDXL local generation. "
+            "If context is sports transfer/club/player domain, choose editorial_photo or documentary_wide unless very strong statistical-document evidence. "
+            "In sports domain include explicit no-text and no-badge restrictions. "
             f"Document context:\n{context}"
         )
 

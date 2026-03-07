@@ -326,6 +326,7 @@ class AppGUI(ctk.CTk):
                         guidance_scale=preset.guidance_scale,
                         openai_status="pending",
                         prompt_source="local_prompt_builder",
+                        strategy_adjustment_reason=None,
                     )
                     self.manifest_writer.add_document(document_manifest)
                     try:
@@ -341,13 +342,14 @@ class AppGUI(ctk.CTk):
                         plan = resolution.prompt_plan
                         intelligence = resolution.intelligence
                         self.logger.info(
-                            "Documento=%s | source=%s | openai_status=%s | domain=%s | strategy_effective=%s | fallback_reason=%s",
+                            "Documento=%s | source=%s | openai_status=%s | domain=%s | strategy_effective=%s | fallback_reason=%s | strategy_adjustment=%s",
                             docx_path.name,
                             plan.source,
                             resolution.openai_status,
                             plan.domain,
                             plan.strategy_effective,
                             intelligence.fallback_reason or "none",
+                            intelligence.strategy_adjustment_reason or "none",
                         )
                         document_manifest.source = plan.source
                         document_manifest.openai_status = resolution.openai_status
@@ -357,6 +359,7 @@ class AppGUI(ctk.CTk):
                         document_manifest.strategy_suggested = intelligence.visual_strategy
                         document_manifest.strategy_effective = plan.strategy_effective
                         document_manifest.domain = plan.domain
+                        document_manifest.strategy_adjustment_reason = plan.strategy_adjustment_reason
                         for idx, prompt in enumerate(plan.positive_prompts, start=1):
                             output_path = self.image_generator.generate(
                                 docx_path=docx_path,

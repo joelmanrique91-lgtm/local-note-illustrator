@@ -20,6 +20,7 @@ DomainName = Literal[
     "technology_science",
     "conflict_disaster_crisis",
     "people_news",
+    "sports_transfers",
     "technical_generic",
 ]
 
@@ -113,6 +114,26 @@ DOMAIN_KEYWORDS: dict[DomainName, set[str]] = {
         "declaró",
         "declaro",
     },
+    "sports_transfers": {
+        "club",
+        "jugador",
+        "fichaje",
+        "se incorpora",
+        "incorpora",
+        "pase",
+        "mercado de pases",
+        "defensa",
+        "delantero",
+        "mediocampista",
+        "entrenamiento",
+        "estadio",
+        "fútbol",
+        "futbol",
+        "huracán",
+        "huracan",
+        "boca",
+        "river",
+    },
     "technical_generic": {
         "documento",
         "informe",
@@ -124,6 +145,21 @@ DOMAIN_KEYWORDS: dict[DomainName, set[str]] = {
         "metodología",
         "metodologia",
     },
+}
+
+SPORTS_STATS_KEYWORDS = {
+    "estadística",
+    "estadisticas",
+    "stats",
+    "xg",
+    "posesión",
+    "posesion",
+    "heatmap",
+    "gráfico",
+    "grafico",
+    "tabla",
+    "porcentaje",
+    "expected goals",
 }
 
 PEOPLE_RISK_KEYWORDS = {
@@ -180,7 +216,20 @@ def estimate_human_closeup_risk(text: str, domain: DomainName) -> int:
     return min(risk, 10)
 
 
-def select_visual_strategy(domain: DomainName, human_closeup_risk: int) -> VisualStrategyName:
+def _sports_statistical_evidence(text: str) -> int:
+    lowered = _tokenize(text)
+    score = 0
+    for keyword in SPORTS_STATS_KEYWORDS:
+        if keyword in lowered:
+            score += 1
+    return score
+
+
+def select_visual_strategy(
+    domain: DomainName,
+    human_closeup_risk: int,
+    text: str = "",
+) -> VisualStrategyName:
     if domain == "political_institutional":
         return "institutional"
     if domain == "economy_markets":
@@ -193,6 +242,10 @@ def select_visual_strategy(domain: DomainName, human_closeup_risk: int) -> Visua
         return "documentary_wide"
     if domain == "people_news":
         return "documentary_wide" if human_closeup_risk >= 5 else "editorial_photo"
+    if domain == "sports_transfers":
+        if _sports_statistical_evidence(text) >= 2:
+            return "infographic_like"
+        return "documentary_wide" if human_closeup_risk >= 6 else "editorial_photo"
     return "conceptual"
 
 
@@ -203,7 +256,7 @@ def analyze_visual_strategy(text: str, override: str = "auto") -> StrategyProfil
     if override != "auto":
         strategy = override  # trusted from GUI constrained options
     else:
-        strategy = select_visual_strategy(domain, risk)
+        strategy = select_visual_strategy(domain, risk, text=text)
 
     return StrategyProfile(
         domain=domain,

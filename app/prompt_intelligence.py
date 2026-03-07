@@ -13,6 +13,7 @@ from app.llm_assistant import (
     OpenAIPromptAssistant,
 )
 from app.prompt_builder import build_local_fallback_result, compose_prompt_plan
+from app.strategy import classify_domain
 from app.types import PromptIntelligenceResult, PromptPlan
 
 
@@ -41,6 +42,59 @@ def _apply_manual_override(intelligence: PromptIntelligenceResult, strategy_over
         confidence=intelligence.confidence,
         fallback_reason=intelligence.fallback_reason,
         raw_schema_version=intelligence.raw_schema_version,
+        strategy_adjustment_reason=intelligence.strategy_adjustment_reason,
+    )
+
+
+def _enforce_sports_visual_policy(intelligence: PromptIntelligenceResult, text: str, logger) -> PromptIntelligenceResult:
+    domain = intelligence.domain
+    if domain == "technical_generic":
+        inferred = classify_domain(text)
+        if inferred == "sports_transfers":
+            domain = inferred
+
+    if domain != "sports_transfers":
+        return intelligence
+
+    allowed = {"editorial_photo", "documentary_wide"}
+    if intelligence.visual_strategy in allowed:
+        return PromptIntelligenceResult(
+            source=intelligence.source,
+            domain=domain,
+            visual_strategy=intelligence.visual_strategy,
+            human_closeup_risk=intelligence.human_closeup_risk,
+            avoid_close_ups=intelligence.avoid_close_ups,
+            prompt_main=intelligence.prompt_main,
+            prompt_variants=intelligence.prompt_variants,
+            negative_prompt=intelligence.negative_prompt,
+            composition_notes=intelligence.composition_notes,
+            style_notes=intelligence.style_notes,
+            confidence=intelligence.confidence,
+            fallback_reason=intelligence.fallback_reason,
+            raw_schema_version=intelligence.raw_schema_version,
+            strategy_adjustment_reason=intelligence.strategy_adjustment_reason,
+        )
+
+    reason = f"domain_policy:sports_transfers_forced_from_{intelligence.visual_strategy}"
+    logger.warning(
+        "Policy adjustment: sports domain strategy corrected from %s to editorial_photo",
+        intelligence.visual_strategy,
+    )
+    return PromptIntelligenceResult(
+        source=intelligence.source,
+        domain=domain,
+        visual_strategy="editorial_photo",
+        human_closeup_risk=max(intelligence.human_closeup_risk, 4),
+        avoid_close_ups=True,
+        prompt_main=intelligence.prompt_main,
+        prompt_variants=intelligence.prompt_variants,
+        negative_prompt=intelligence.negative_prompt,
+        composition_notes=intelligence.composition_notes,
+        style_notes=intelligence.style_notes,
+        confidence=intelligence.confidence,
+        fallback_reason=intelligence.fallback_reason,
+        raw_schema_version=intelligence.raw_schema_version,
+        strategy_adjustment_reason=reason,
     )
 
 
@@ -59,12 +113,21 @@ def _resolve_local_fallback(
         variants=variants,
         fallback_reason=fallback_reason,
     )
+    intelligence = _enforce_sports_visual_policy(intelligence, text=text, logger=none_logger)
     plan = compose_prompt_plan(
         intelligence=intelligence,
         base_negative_prompt=config.default_negative_prompt,
         variants=variants,
     )
     return PromptResolution(intelligence=intelligence, prompt_plan=plan, openai_status=openai_status)
+
+
+class _NoLogger:
+    def warning(self, *_args, **_kwargs):
+        return None
+
+
+none_logger = _NoLogger()
 
 
 def resolve_prompt_plan(
@@ -90,6 +153,7 @@ def resolve_prompt_plan(
     assistant = OpenAIPromptAssistant(config=config, logger=logger)
     try:
         intelligence = assistant.generate_prompt_intelligence(text=text, variants=variants)
+        intelligence = _enforce_sports_visual_policy(intelligence, text=text, logger=logger)
         intelligence = _apply_manual_override(intelligence, strategy_override)
         plan = compose_prompt_plan(
             intelligence=intelligence,
