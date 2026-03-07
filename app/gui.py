@@ -196,11 +196,17 @@ class AppGUI(ctk.CTk):
 
             total = len(self.docx_jobs)
             if total == 0:
+                self.after(0, lambda: self.progress.set(0))
                 self.after(0, lambda: self._set_status("No se encontraron .docx"))
                 return
 
             self.after(0, lambda: self._set_status("Generando imágenes..."))
+            self.after(0, lambda: self.progress.set(0))
+
             done = 0
+            succeeded_docs = 0
+            failed_docs: list[Path] = []
+
             for docx_path in self.docx_jobs:
                 try:
                     text = read_docx_text(docx_path)
@@ -216,15 +222,56 @@ class AppGUI(ctk.CTk):
                             negative_prompt=prompts.negative_prompt,
                             image_index=idx,
                         )
+                    succeeded_docs += 1
                     self.logger.info("Documento procesado: %s", docx_path)
                 except Exception as exc:  # noqa: BLE001
+                    failed_docs.append(docx_path)
                     self.logger.exception("Falló el documento %s: %s", docx_path, exc)
                 finally:
                     done += 1
                     progress = done / total
                     self.after(0, lambda p=progress: self.progress.set(p))
 
-            self.after(0, lambda: self._set_status("Generación completada"))
+            failed_count = len(failed_docs)
+            if failed_count == 0:
+                final_status = "Generación completada"
+                self.logger.info(
+                    "Resultado final: éxito total (%s/%s documentos).", succeeded_docs, total
+                )
+                self.after(
+                    0,
+                    lambda: messagebox.showinfo(
+                        "Generación completada",
+                        f"Se procesaron correctamente {succeeded_docs} de {total} documentos.",
+                    ),
+                )
+            elif succeeded_docs > 0:
+                final_status = "Generación completada con errores"
+                self.logger.warning(
+                    "Resultado final: éxito parcial (%s ok, %s con error).",
+                    succeeded_docs,
+                    failed_count,
+                )
+                self.after(
+                    0,
+                    lambda: messagebox.showwarning(
+                        "Generación completada con errores",
+                        f"Se procesaron {succeeded_docs} de {total} documentos. "
+                        f"Fallaron {failed_count}. Revisá logs.",
+                    ),
+                )
+            else:
+                final_status = "Generación fallida"
+                self.logger.error("Resultado final: fallo total (%s/%s con error).", failed_count, total)
+                self.after(
+                    0,
+                    lambda: messagebox.showerror(
+                        "Generación fallida",
+                        "No se pudo generar imágenes para ningún documento. Revisá logs.",
+                    ),
+                )
+
+            self.after(0, lambda s=final_status: self._set_status(s))
 
         self._run_background(job)
 

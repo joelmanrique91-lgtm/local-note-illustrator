@@ -19,7 +19,7 @@ class AppConfig:
     output_format: str
     log_dir: Path
     app_log_file: str
-
+    force_cpu: bool
 
 
 def _env_int(name: str, default: int) -> int:
@@ -32,7 +32,6 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
-
 def _env_float(name: str, default: float) -> float:
     value = os.getenv(name)
     if value is None:
@@ -42,6 +41,12 @@ def _env_float(name: str, default: float) -> float:
     except ValueError:
         return default
 
+
+def _env_bool(name: str, default: bool = False) -> bool:
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def load_config() -> AppConfig:
@@ -67,4 +72,5 @@ def load_config() -> AppConfig:
         output_format=output_format,
         log_dir=log_dir,
         app_log_file=os.getenv("APP_LOG_FILE", "app.log"),
+        force_cpu=_env_bool("FORCE_CPU", False),
     )
