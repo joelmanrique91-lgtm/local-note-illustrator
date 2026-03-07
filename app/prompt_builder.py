@@ -5,6 +5,7 @@ from collections import Counter
 from dataclasses import dataclass
 
 from app.strategy import StrategyProfile, analyze_visual_strategy
+from app.types import PromptIntelligenceResult, PromptPlan
 
 STOPWORDS = {
     "de",
@@ -120,7 +121,7 @@ def _unique_nonempty(parts: list[str]) -> list[str]:
     return ordered
 
 
-def _split_article_sections(text: str) -> ArticleSections:
+def split_article_sections(text: str) -> ArticleSections:
     lines = [_normalize_text(line) for line in text.splitlines() if _normalize_text(line)]
     if not lines:
         return ArticleSections("nota periodística", "", "", "", "")
@@ -141,6 +142,21 @@ def _split_article_sections(text: str) -> ArticleSections:
     return ArticleSections(title, summary, tags, first_paragraph, body)
 
 
+def build_document_context(text: str, max_chars: int = 8000) -> str:
+    sections = split_article_sections(text)
+    composed = "\n".join(
+        [
+            f"TITLE: {sections.title}",
+            f"SUMMARY: {sections.summary}",
+            f"TAGS: {sections.tags}",
+            f"FIRST_PARAGRAPH: {sections.first_paragraph}",
+            f"BODY: {sections.body}",
+        ]
+    )
+    normalized = _normalize_text(composed)
+    return normalized[:max_chars]
+
+
 def _extract_keywords(text: str, n: int = 8) -> list[str]:
     lowered = text.lower()
     tokens = re.findall(r"[a-zA-ZáéíóúÁÉÍÓÚñÑ-]{4,}", lowered)
@@ -153,9 +169,10 @@ def _extract_keywords(text: str, n: int = 8) -> list[str]:
     return [token for token, _ in freqs.most_common(n)]
 
 
-def _compose_negative_prompt(base_negative: str) -> str:
+def compose_negative_prompt(base_negative: str, extra_negative: str = "") -> str:
     grouped = ", ".join(NEGATIVE_GROUPS.values())
-    return ", ".join(item for item in [grouped, base_negative.strip()] if item)
+    parts = [grouped, extra_negative.strip(), base_negative.strip()]
+    return ", ".join(item for item in parts if item)
 
 
 def _build_prompt_from_strategy(sections: ArticleSections, profile: StrategyProfile) -> str:
@@ -188,22 +205,106 @@ def _build_prompt_from_strategy(sections: ArticleSections, profile: StrategyProf
     )
 
 
+def build_local_fallback_result(
+    text: str,
+    strategy_override: str,
+    base_negative_prompt: str,
+    variants: int,
+    fallback_reason: str,
+) -> PromptIntelligenceResult:
+    variants = max(1, min(variants, 2))
+    sections = split_article_sections(text)
+    profile = analyze_visual_strategy(text, override=strategy_override)
+    base_prompt = _build_prompt_from_strategy(sections, profile)
+
+    prompt_variants: list[str] = []
+    if variants == 2:
+        prompt_variants.append(
+            f"{base_prompt}, alternate angle, maintain same strategy, keep composition stable and non-chaotic"
+        )
+
+    return PromptIntelligenceResult(
+        source="local_fallback",
+        domain=profile.domain,
+        visual_strategy=profile.visual_strategy,
+        human_closeup_risk=profile.human_closeup_risk,
+        avoid_close_ups=profile.avoid_close_ups,
+        prompt_main=base_prompt,
+        prompt_variants=prompt_variants,
+        negative_prompt=compose_negative_prompt(base_negative_prompt),
+        composition_notes="local heuristic composition",
+        style_notes="local heuristic editorial style",
+        confidence=0.45,
+        fallback_reason=fallback_reason,
+        raw_schema_version="local.fallback.v1",
+    )
+
+
+def compose_prompt_plan(
+    intelligence: PromptIntelligenceResult,
+    base_negative_prompt: str,
+    variants: int,
+) -> PromptPlan:
+    variants = max(1, min(variants, 2))
+
+    main = intelligence.prompt_main.strip()
+    if not main:
+        main = "editorial documentary scene, realistic composition"
+
+    positives = [main]
+    for extra in intelligence.prompt_variants:
+        if len(positives) >= variants:
+            break
+        normalized = extra.strip()
+        if normalized and normalized.lower() != main.lower():
+            positives.append(normalized)
+
+    if len(positives) < variants:
+        positives.append(f"{main}, alternate angle, composition remains stable")
+
+    safe_addons = [
+        intelligence.composition_notes.strip(),
+        intelligence.style_notes.strip(),
+        "avoid close-up portraits" if intelligence.avoid_close_ups else "",
+        "credible editorial realism",
+    ]
+    positives = [", ".join(part for part in [prompt, *safe_addons] if part) for prompt in positives]
+
+    combined_negative = compose_negative_prompt(
+        base_negative=base_negative_prompt,
+        extra_negative=intelligence.negative_prompt,
+    )
+
+    return PromptPlan(
+        positive_prompts=positives,
+        negative_prompt=combined_negative,
+        strategy_effective=intelligence.visual_strategy,
+        domain=intelligence.domain,
+        source=intelligence.source,
+    )
+
+
 def build_prompts(
     text: str,
     negative_prompt: str,
     variants: int = 1,
     strategy_override: str = "auto",
 ) -> PromptPack:
-    variants = max(1, min(variants, 2))
-    sections = _split_article_sections(text)
+    fallback = build_local_fallback_result(
+        text=text,
+        strategy_override=strategy_override,
+        base_negative_prompt=negative_prompt,
+        variants=variants,
+        fallback_reason="legacy_local_builder",
+    )
+    plan = compose_prompt_plan(
+        intelligence=fallback,
+        base_negative_prompt=negative_prompt,
+        variants=variants,
+    )
     profile = analyze_visual_strategy(text, override=strategy_override)
-    base = _build_prompt_from_strategy(sections, profile)
-
-    prompts = [base]
-    if variants == 2:
-        prompts.append(
-            f"{base}, alternate angle, maintain same strategy, keep composition stable and non-chaotic"
-        )
-
-    full_negative = _compose_negative_prompt(negative_prompt)
-    return PromptPack(positive_prompts=prompts, negative_prompt=full_negative, strategy_profile=profile)
+    return PromptPack(
+        positive_prompts=plan.positive_prompts,
+        negative_prompt=plan.negative_prompt,
+        strategy_profile=profile,
+    )

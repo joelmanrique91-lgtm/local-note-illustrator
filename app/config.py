@@ -15,7 +15,6 @@ class InferencePreset:
     width: int
     height: int
     default_num_images: int
-    use_random_seed: bool = True
 
 
 INFERENCE_PRESETS: dict[str, InferencePreset] = {
@@ -58,6 +57,14 @@ class AppConfig:
     app_log_file: str
     force_cpu: bool
     default_preset: str
+    openai_enable: bool
+    openai_api_key: str
+    openai_model: str
+    openai_timeout_seconds: int
+    openai_max_retries: int
+    openai_prompt_intelligence_mode: str
+    openai_max_input_chars: int
+    openai_strict_schema: bool
 
 
 def _env_int(name: str, default: int) -> int:
@@ -113,6 +120,12 @@ def load_config() -> AppConfig:
     default_guidance_scale = max(1.0, _env_float("DEFAULT_GUIDANCE_SCALE", preset.guidance_scale))
     default_width = _normalize_dimension(_env_int("DEFAULT_WIDTH", preset.width))
     default_height = _normalize_dimension(_env_int("DEFAULT_HEIGHT", preset.height))
+    openai_timeout_seconds = max(5, _env_int("OPENAI_TIMEOUT_SECONDS", 20))
+    openai_max_retries = max(0, _env_int("OPENAI_MAX_RETRIES", 1))
+    openai_mode = os.getenv(
+        "OPENAI_PROMPT_INTELLIGENCE_MODE", "required_with_safety_fallback"
+    ).strip()
+    openai_max_input_chars = max(1000, _env_int("OPENAI_MAX_INPUT_CHARS", 8000))
 
     return AppConfig(
         model_id=os.getenv("MODEL_ID", "stabilityai/stable-diffusion-xl-base-1.0"),
@@ -133,4 +146,12 @@ def load_config() -> AppConfig:
         app_log_file=os.getenv("APP_LOG_FILE", "app.log"),
         force_cpu=_env_bool("FORCE_CPU", False),
         default_preset=preset.name,
+        openai_enable=_env_bool("OPENAI_ENABLE", True),
+        openai_api_key=os.getenv("OPENAI_API_KEY", ""),
+        openai_model=os.getenv("OPENAI_MODEL", "gpt-4.1-mini"),
+        openai_timeout_seconds=openai_timeout_seconds,
+        openai_max_retries=openai_max_retries,
+        openai_prompt_intelligence_mode=openai_mode,
+        openai_max_input_chars=openai_max_input_chars,
+        openai_strict_schema=_env_bool("OPENAI_STRICT_SCHEMA", True),
     )
