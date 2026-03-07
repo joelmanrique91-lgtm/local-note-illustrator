@@ -18,6 +18,5 @@ def read_docx_text(path: Path) -> str:
         if text:
             chunks.append(text)
 
-    merged = "\n".join(chunks)
-    merged = re.sub(r"\s+", " ", merged).strip()
-    return merged
+    normalized = [re.sub(r"\s+", " ", chunk).strip() for chunk in chunks]
+    return "\n".join([chunk for chunk in normalized if chunk])

@@ -137,11 +137,13 @@ D:\MisNotas\ProyectoA\nota_01.docx
 la app puede generar:
 
 ```text
-D:\MisNotas\ProyectoA\nota_01_img_01.png
-D:\MisNotas\ProyectoA\nota_01_img_02.png
+D:\MisNotas\ProyectoA\nota_01_img_01.jpg
+D:\MisNotas\ProyectoA\nota_01_img_02.jpg
 ```
 
 Siempre en la **misma subcarpeta** del `.docx` origen.
+
+Las imágenes se guardan como **JPEG comprimido** para mejorar la eficiencia de almacenamiento.
 
 ---
 

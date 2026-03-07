@@ -52,9 +52,9 @@ def _env_bool(name: str, default: bool = False) -> bool:
 def load_config() -> AppConfig:
     load_dotenv(override=False)
 
-    output_format = os.getenv("OUTPUT_FORMAT", "png").lower()
+    output_format = os.getenv("OUTPUT_FORMAT", "jpg").lower()
     if output_format not in {"png", "jpg", "jpeg"}:
-        output_format = "png"
+        output_format = "jpg"
 
     log_dir = Path(os.getenv("LOG_DIR", "logs"))
 
