@@ -12,12 +12,13 @@ Está pensada para ejecutarse en **Windows desde Anaconda Prompt** con Python 3.
 2. Permite seleccionar carpeta raíz local.
 3. Escanea archivos `.docx` (ignora temporales `~$`).
 4. Lee texto con `python-docx`.
-5. Construye prompts visuales localmente (sin APIs pagas ni LLM externos).
-6. Genera 1 o 2 imágenes por documento con Diffusers usando SDXL.
-7. Guarda imágenes en la misma carpeta del `.docx`.
-8. Muestra logs, progreso y estado en la GUI.
-9. Permite abrir carpeta seleccionada y carpeta de logs desde la GUI.
-10. Permite exportar parámetros de ejecución en JSON desde la GUI.
+5. Analiza cada documento y selecciona estrategia visual local (sin APIs externas).
+6. Construye prompts editoriales con reglas anti-deformación y anti-close-up.
+7. Genera 1 o 2 imágenes por documento con Diffusers usando SDXL usando presets (speed/balanced/quality/editorial_safe).
+8. Guarda imágenes en la misma carpeta del `.docx`.
+9. Muestra logs, progreso y estado en la GUI (incluye preset, estrategia y seed efectivas).
+10. Permite abrir carpeta seleccionada, outputs y carpeta de logs desde la GUI.
+11. Permite exportar parámetros de ejecución en JSON desde la GUI.
 
 ---
 
@@ -146,6 +147,50 @@ Siempre en la **misma subcarpeta** del `.docx` origen.
 Las imágenes se guardan como **JPEG comprimido** para mejorar la eficiencia de almacenamiento.
 
 ---
+
+
+## Presets de inferencia
+
+La GUI ahora incluye selector de preset:
+
+- `speed`: menor costo computacional
+- `balanced` (default): equilibrio calidad/estabilidad
+- `quality`: más detalle (más lento)
+- `editorial_safe`: composición sobria para noticias con riesgo facial
+
+Cada preset define steps, guidance y tamaño por defecto.
+
+## Estrategia visual
+
+La GUI ahora permite:
+
+- `auto` (recomendado): selección local por dominio/riesgo
+- `editorial_photo`
+- `conceptual`
+- `infographic_like`
+- `industrial`
+- `institutional`
+- `documentary_wide`
+
+Además podés definir `seed` manual; si queda vacío se usa seed aleatoria.
+
+## Chequeo de entorno local
+
+Antes de lanzar la app podés ejecutar:
+
+```bash
+python scripts/check_env.py
+```
+
+El script valida Python, dependencias críticas, CUDA/GPU, configuración y rutas básicas.
+
+En Windows también podés usar:
+
+```bat
+start_local.bat
+```
+
+Este launcher corre `check_env` y luego abre la GUI.
 
 ## Notas sobre GPU NVIDIA / CUDA
 
