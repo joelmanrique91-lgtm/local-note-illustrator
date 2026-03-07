@@ -4,7 +4,6 @@ import re
 from collections import Counter
 from dataclasses import dataclass
 
-
 STOPWORDS = {
     "de",
     "la",
@@ -56,46 +55,168 @@ JUNK_KEYWORDS = {
 
 TAG_PREFIXES = ("tags:", "tag:", "etiquetas:")
 
-EVENT_KEYWORDS = {
-    "cumbre": "international political summit",
-    "summit": "international political summit",
-    "foro": "international forum",
-    "conferencia": "international conference",
-    "reunión": "international diplomatic meeting",
-    "reunion": "international diplomatic meeting",
-    "encuentro": "international diplomatic meeting",
-    "eleccion": "electoral event",
-    "elecciones": "electoral event",
-    "protesta": "public protest",
-    "manifestacion": "public protest",
-    "incendio": "fire emergency response",
-    "terremoto": "earthquake response",
-    "inundacion": "flood emergency response",
-    "acuerdo": "diplomatic agreement",
-    "jornada": "institutional event",
+DOMAIN_KEYWORDS = {
+    "diplomatic": {
+        "cumbre",
+        "summit",
+        "diplom",
+        "delegación",
+        "delegacion",
+        "presidente",
+        "canciller",
+        "ministro",
+        "foro",
+        "bilateral",
+        "embajada",
+    },
+    "mining": {
+        "mina",
+        "minero",
+        "minera",
+        "open pit",
+        "yacimiento",
+        "perforación",
+        "perforacion",
+        "drill",
+        "ore",
+        "core",
+        "geología",
+        "geologia",
+        "haul truck",
+        "planta de procesamiento",
+    },
+    "business": {
+        "empresa",
+        "empresarial",
+        "ejecutivo",
+        "board",
+        "acuerdo comercial",
+        "firmó",
+        "firmo",
+        "inversión",
+        "inversion",
+        "mercado",
+        "bolsa",
+        "acciones",
+        "balance",
+    },
+    "judicial": {
+        "justicia",
+        "juez",
+        "jueza",
+        "fiscal",
+        "tribunal",
+        "corte",
+        "policía",
+        "policia",
+        "detenido",
+        "allanamiento",
+        "investigación",
+        "investigacion",
+        "acusado",
+    },
+    "disaster": {
+        "inundación",
+        "inundacion",
+        "incendio",
+        "terremoto",
+        "desastre",
+        "evacuación",
+        "evacuacion",
+        "rescate",
+    },
 }
 
-EVENT_KIND_MAP = {
-    "cumbre": "Summit",
-    "summit": "Summit",
-    "foro": "Forum",
-    "conferencia": "Conference",
-    "reunión": "Meeting",
-    "reunion": "Meeting",
-    "encuentro": "Meeting",
+DOMAIN_DEFAULTS = {
+    "diplomatic": {
+        "scene": "summit conference table with delegations",
+        "anchors": [
+            "national flags",
+            "conference nameplates",
+            "table microphones",
+            "press photographers",
+        ],
+        "shot": "medium-wide documentary shot capturing delegates and negotiation dynamics",
+    },
+    "mining": {
+        "scene": "active open-pit mine operation",
+        "anchors": [
+            "haul trucks",
+            "drill rig",
+            "workers with helmets",
+            "ore benches",
+        ],
+        "shot": "wide editorial field shot with operational depth and industrial context",
+    },
+    "business": {
+        "scene": "corporate decision scene in boardroom or market context",
+        "anchors": [
+            "conference table",
+            "financial monitors",
+            "company logo backdrop",
+            "executives speaking to press",
+        ],
+        "shot": "clean editorial medium shot with credible business atmosphere",
+    },
+    "judicial": {
+        "scene": "judicial or police institutional coverage",
+        "anchors": [
+            "courthouse steps",
+            "police briefing microphones",
+            "official vehicles",
+            "investigation documents",
+        ],
+        "shot": "documentary street-level shot with institutional framing",
+    },
+    "disaster": {
+        "scene": "emergency response at damaged public infrastructure",
+        "anchors": [
+            "emergency responders",
+            "damaged roads or buildings",
+            "rescue equipment",
+            "caution tape",
+        ],
+        "shot": "wide urgent photojournalistic shot focused on response actions",
+    },
+    "general": {
+        "scene": "editorial press briefing environment",
+        "anchors": ["podium", "reporters", "microphones", "institutional signage"],
+        "shot": "neutral but specific medium editorial shot in real location",
+    },
 }
 
-TITLE_VERB_PREFIX = re.compile(
-    r"^[A-ZÁÉÍÓÚÑ][^,;:.]{0,90}?\b(?:encabeza|participa en|asiste a|lidera|preside|impulsa|"
-    r"abre|inaugura|attends|leads|heads)\b\s+",
-    flags=re.IGNORECASE,
-)
+ACTION_PATTERNS = {
+    "announcing": {"anunció", "anuncio", "anuncia", "presentó", "presento", "comunicó"},
+    "negotiating": {"negocia", "negociación", "negociacion", "acuerdo", "dialogo", "reunión", "reunion"},
+    "signing": {"firma", "firmó", "firmo", "suscribió", "suscribio"},
+    "investigating": {"investiga", "allanó", "allano", "imputó", "detuvo", "acusó", "acuso"},
+    "operating": {"producción", "produccion", "extracción", "extraccion", "perforación", "perforacion"},
+    "responding": {"evacuó", "evacuo", "rescate", "asistencia", "emergencia"},
+}
+
+EVENT_LABELS = {
+    "diplomatic": "high-level diplomatic development",
+    "mining": "mining and resource operations update",
+    "business": "business and economic development",
+    "judicial": "judicial or law-enforcement development",
+    "disaster": "public emergency development",
+    "general": "current-affairs news event",
+}
 
 
 @dataclass
 class PromptPack:
     positive_prompts: list[str]
     negative_prompt: str
+
+
+@dataclass
+class ArticleSections:
+    title: str
+    summary: str
+    tags: str
+    first_paragraph: str
+    body: str
 
 
 def _normalize_text(text: str) -> str:
@@ -127,10 +248,10 @@ def _unique_nonempty(parts: list[str]) -> list[str]:
     return ordered
 
 
-def _split_article_sections(text: str) -> tuple[str, str, str, str]:
+def _split_article_sections(text: str) -> ArticleSections:
     lines = [_normalize_text(line) for line in text.splitlines() if _normalize_text(line)]
     if not lines:
-        return "nota periodística", "", "", ""
+        return ArticleSections("nota periodística", "", "", "", "")
 
     title = lines[0]
     body_lines = lines[1:]
@@ -140,248 +261,178 @@ def _split_article_sections(text: str) -> tuple[str, str, str, str]:
 
     useful_body = [line for line in body_lines if not _is_tag_line(line)]
     summary = useful_body[0] if useful_body else title
+    first_paragraph = useful_body[1] if len(useful_body) > 1 else summary
 
-    first_paragraph = ""
-    for line in useful_body[1:]:
-        if line.lower() != summary.lower():
-            first_paragraph = line
-            break
+    body_lines_context = useful_body[1:7] if useful_body else []
+    body = " ".join(body_lines_context)
 
-    if not first_paragraph:
-        first_paragraph = summary
-
-    return title, summary, tags, first_paragraph
+    return ArticleSections(title, summary, tags, first_paragraph, body)
 
 
-def _extract_keywords(text: str, n: int = 6) -> list[str]:
+def _extract_keywords(text: str, n: int = 8) -> list[str]:
     lowered = text.lower()
-
-    phrase_map = {
-        "seguridad regional": "regional security",
-        "america latina": "latin american relations",
-        "américa latina": "latin american relations",
-        "relaciones bilaterales": "bilateral relations",
-        "politica internacional": "international politics",
-        "política internacional": "international politics",
-        "diplomacia": "diplomacy",
-        "delegaciones": "official delegations",
-        "comercio": "trade",
-        "defensa": "defense",
-        "economía": "economy",
-        "economia": "economy",
-        "energía": "energy",
-        "energia": "energy",
-        "migración": "migration",
-        "migracion": "migration",
-    }
-    phrase_hits = [target for source, target in phrase_map.items() if source in lowered]
-
-    tokens = re.findall(r"[a-zA-ZáéíóúÁÉÍÓÚñÑ]{4,}", lowered)
+    tokens = re.findall(r"[a-zA-ZáéíóúÁÉÍÓÚñÑ-]{4,}", lowered)
     filtered = [
         token
         for token in tokens
         if token not in STOPWORDS and token not in JUNK_KEYWORDS and len(token) > 4
     ]
-
-    preferred_map = {
-        "lideres": "leaders",
-        "líderes": "leaders",
-        "diplomacia": "diplomacy",
-        "delegaciones": "official delegations",
-        "cumbre": "summit",
-        "conferencia": "conference",
-        "comercio": "trade",
-        "defensa": "defense",
-        "economia": "economy",
-        "economía": "economy",
-        "energia": "energy",
-        "energía": "energy",
-        "migracion": "migration",
-        "migración": "migration",
-    }
-
-    prioritized_tokens = [preferred_map[token] for token in filtered if token in preferred_map]
     freqs = Counter(filtered)
-    fallback_tokens = [token for token, _ in freqs.most_common(max(n * 2, 8))]
-
-    candidates = _unique_nonempty(phrase_hits + prioritized_tokens + fallback_tokens)
-    if not candidates:
-        return ["international diplomacy"]
-    return candidates[:n]
+    return [token for token, _ in freqs.most_common(n)]
 
 
-def _extract_entities(title: str, summary: str, tags: str, first_paragraph: str) -> dict[str, list[str] | str]:
-    source = ". ".join([title, summary, tags, first_paragraph]).strip()
-    raw_people = re.findall(r"\b([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+)\b", source)
-    people = [
-        person
-        for person in raw_people
-        if person.split()[1].lower() not in {"la", "el", "los", "las", "de", "del"}
-        and person.lower() not in {"américa latina", "estados unidos"}
-    ]
+def _clean_location(location: str) -> str:
+    tokens = [tok for tok in _normalize_text(location).split() if tok]
+    trailing_noise = {"La", "El", "Los", "Las", "Durante", "Autoridades", "Tags"}
+    while len(tokens) > 1 and tokens[-1] in trailing_noise:
+        tokens.pop()
+    return " ".join(tokens)
 
-    location_pattern = r"\b(?:en|desde|de|hacia)\s+([A-ZÁÉÍÓÚÑ][\wáéíóúñÁÉÍÓÚÑ-]*(?:\s+[A-ZÁÉÍÓÚÑ][\wáéíóúñÁÉÍÓÚÑ-]*)*)"
-    locations = re.findall(location_pattern, source)
+
+def _extract_entities(full_text: str) -> dict[str, list[str]]:
+    raw_people = re.findall(
+        r"\b([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+){1,2})\b",
+        full_text,
+    )
+    people = []
+    for person in raw_people:
+        lowered = person.lower()
+        if person.split()[1].lower() in {"la", "el", "los", "las", "de", "del"}:
+            continue
+        if "américa latina" in lowered or "america latina" in lowered:
+            continue
+        if any(noise in person.split() for noise in {"Durante", "Tags", "Autoridades"}):
+            continue
+        people.append(person)
+
+    location_pattern = (
+        r"\b(?:en|desde|hacia|frente a|near|in)\s+"
+        r"([A-ZÁÉÍÓÚÑ][\wáéíóúñÁÉÍÓÚÑ-]*(?:\s+[A-ZÁÉÍÓÚÑ][\wáéíóúñÁÉÍÓÚÑ-]*){0,3})"
+    )
+    locations = [_clean_location(item) for item in re.findall(location_pattern, full_text)]
 
     org_pattern = (
-        r"\b([A-ZÁÉÍÓÚÑ]{2,}(?:\s+[A-ZÁÉÍÓÚÑ]{2,})*|"
-        r"(?:Ministerio|Gobierno|ONU|OTAN|UE|Casa Blanca|Congreso|Presidencia)"
-        r"(?:\s+[A-ZÁÉÍÓÚÑa-záéíóúñ]+)*)"
+        r"\b(?:Ministerio(?:\s+de\s+[A-ZÁÉÍÓÚÑa-záéíóúñ]+)?|Gobierno(?:\s+de\s+[A-ZÁÉÍÓÚÑa-záéíóúñ]+)?|"
+        r"Presidencia|Congreso|Senado|Corte Suprema|Fiscalía|Policía|ONU|OTAN|UE|Banco Central|"
+        r"[A-ZÁÉÍÓÚÑ]{2,}(?:\s+[A-ZÁÉÍÓÚÑ]{2,})*)\b"
     )
-    organizations = re.findall(org_pattern, source)
-
-    lowered = source.lower()
-    event_type = "news event"
-    for keyword, label in EVENT_KEYWORDS.items():
-        if keyword in lowered:
-            event_type = label
-            break
+    organizations = re.findall(org_pattern, full_text)
 
     return {
         "people": _unique_nonempty(people)[:3],
         "locations": _unique_nonempty(locations)[:3],
         "organizations": _unique_nonempty(organizations)[:3],
-        "event_type": event_type,
     }
 
 
-def _translate_event_name(name_fragment: str) -> str:
-    fragment = _normalize_text(name_fragment)
-    replacements = {
-        "escudo de las américas": "Shield of the Americas",
-        "america latina": "Latin America",
-        "américa latina": "Latin America",
+def _infer_domain(source_text: str) -> str:
+    lowered = source_text.lower()
+    scores: dict[str, int] = {key: 0 for key in DOMAIN_KEYWORDS}
+    for domain, keywords in DOMAIN_KEYWORDS.items():
+        for keyword in keywords:
+            if keyword in lowered:
+                scores[domain] += 1
+
+    ordered = sorted(scores.items(), key=lambda pair: pair[1], reverse=True)
+    best_domain, best_score = ordered[0]
+    return best_domain if best_score > 0 else "general"
+
+
+def _infer_action(source_text: str, domain: str) -> str:
+    lowered = source_text.lower()
+    for action, keywords in ACTION_PATTERNS.items():
+        if any(keyword in lowered for keyword in keywords):
+            return action
+
+    default_by_domain = {
+        "diplomatic": "negotiating",
+        "mining": "operating",
+        "business": "announcing",
+        "judicial": "investigating",
+        "disaster": "responding",
+        "general": "announcing",
     }
-    lowered = fragment.lower()
-    for src, target in replacements.items():
-        lowered = lowered.replace(src, target)
-
-    normalized = re.sub(r"\bdel\b", "of the", lowered, flags=re.IGNORECASE)
-    normalized = re.sub(r"\bde\b", "of", normalized, flags=re.IGNORECASE)
-    normalized = re.sub(r"\bde las\b", "of the", normalized, flags=re.IGNORECASE)
-    normalized = re.sub(r"\bde los\b", "of the", normalized, flags=re.IGNORECASE)
-
-    words = [w for w in normalized.split() if w]
-    capitalized = " ".join(word if word in {"of", "the", "and"} else word.capitalize() for word in words)
-    return _normalize_text(capitalized)
+    return default_by_domain.get(domain, "announcing")
 
 
-def _infer_event_label(title: str, event_type: str) -> str:
-    cleaned_title = _normalize_text(title)
-    lowered_title = cleaned_title.lower()
+def _choose_scene(source_text: str, domain: str, action: str) -> dict[str, str | list[str]]:
+    lowered = source_text.lower()
+    base = DOMAIN_DEFAULTS[domain].copy()
 
-    stripped = TITLE_VERB_PREFIX.sub("", cleaned_title)
-    stripped_lower = stripped.lower()
+    if domain == "diplomatic":
+        if "podio" in lowered or "declaración" in lowered or "statement" in lowered:
+            base["scene"] = "official podium statement after diplomatic meeting"
+        elif "apretón" in lowered or "handshake" in lowered:
+            base["scene"] = "leaders handshake at summit venue"
+    elif domain == "mining":
+        if "planta" in lowered:
+            base["scene"] = "mineral processing plant in operation"
+        elif "geolog" in lowered or "mapeo" in lowered:
+            base["scene"] = "geologists reviewing mapped drill cores at mine site"
+    elif domain == "business":
+        if "bolsa" in lowered or "mercado" in lowered:
+            base["scene"] = "financial market scene with traders and live stock monitors"
+        elif action == "signing":
+            base["scene"] = "executives signing agreement at formal conference table"
+    elif domain == "judicial":
+        if "tribunal" in lowered or "corte" in lowered:
+            base["scene"] = "courthouse exterior with legal teams and press"
+        elif "polic" in lowered:
+            base["scene"] = "police briefing with official spokesperson and reporters"
 
-    marker_pattern = re.compile(
-        r"\b(cumbre|summit|foro|conferencia|reunión|reunion|encuentro)\b"
-        r"(?:\s+(?:del|de la|de los|de las|de|of|on))?\s*(.+)?",
-        flags=re.IGNORECASE,
+    return base
+
+
+def _build_editorial_prompt(sections: ArticleSections) -> str:
+    source = " ".join(
+        [sections.title, sections.summary, sections.tags, sections.first_paragraph, sections.body]
     )
-    match = marker_pattern.search(stripped)
-    if match:
-        event_kind_raw = match.group(1).lower()
-        event_kind = EVENT_KIND_MAP.get(event_kind_raw, "Summit")
-        name_part = _normalize_text(match.group(2) or "")
-        name_part = re.split(r"\b(?:en|in)\b\s+[A-ZÁÉÍÓÚÑ]", name_part, maxsplit=1)[0]
-        name_part = _translate_event_name(name_part)
-        if name_part and len(name_part) > 3:
-            if event_kind.lower() in name_part.lower():
-                return name_part
-            return f"{name_part} {event_kind}"
+    entities = _extract_entities(source)
+    domain = _infer_domain(source)
+    action = _infer_action(source, domain)
+    scene = _choose_scene(source, domain, action)
 
-    if any(token in lowered_title for token in {"cumbre", "summit", "foro", "conferencia"}):
-        return "high-level political summit"
-    if any(token in stripped_lower for token in {"reunión", "reunion", "encuentro"}):
-        return "international diplomatic meeting"
-
-    if "summit" in event_type:
-        return "high-level political summit"
-    if "diplomatic" in event_type:
-        return "international diplomatic meeting"
-    if "conference" in event_type:
-        return "international conference"
-    return "major current-affairs event"
-
-
-def _infer_context_clauses(event_type: str, tags: str, summary: str, first_paragraph: str) -> list[str]:
-    clauses: list[str] = []
-    if "summit" in event_type or "diplomatic" in event_type:
-        clauses.append("diplomatic conference setting")
-    elif "electoral" in event_type:
-        clauses.append("election coverage atmosphere")
-    elif "protest" in event_type:
-        clauses.append("public demonstration environment")
-    elif "press conference" in event_type:
-        clauses.append("official press conference setting")
-    else:
-        clauses.append("institutional news setting")
-
-    source = f"{tags} {summary} {first_paragraph}".lower()
-    if "líderes" in source or "lideres" in source:
-        clauses.append("meeting with regional leaders")
-    if "diplom" in source:
-        clauses.append("high-level international diplomacy")
-    if "seguridad" in source:
-        clauses.append("regional security agenda")
-
-    return _unique_nonempty(clauses)
-
-
-def _build_editorial_prompt(
-    title: str,
-    summary: str,
-    tags: str,
-    first_paragraph: str,
-    entities: dict[str, list[str] | str],
-) -> str:
     people = entities["people"]
     locations = entities["locations"]
     organizations = entities["organizations"]
-    event_type = entities["event_type"]
 
-    event_label = _infer_event_label(title, event_type)
-    subject = ", ".join(people[:2]) if people else "senior government officials"
-    location = locations[0] if locations else "an official venue"
+    subject = ", ".join(people[:2]) if people else ", ".join(organizations[:2])
+    if not subject:
+        subject = "senior officials and delegates"
 
-    lead_clause = f"{subject} at the {event_label} in {location}" if event_label else f"{subject} in {location}"
+    location = locations[0] if locations else "a formal institutional setting"
+    event_label = EVENT_LABELS.get(domain, EVENT_LABELS["general"])
 
-    context_clauses = _infer_context_clauses(event_type, tags, summary, first_paragraph)
+    action_map = {
+        "announcing": "announcing key decisions",
+        "negotiating": "engaged in high-level negotiations",
+        "signing": "signing an official agreement",
+        "investigating": "during an active investigation update",
+        "operating": "during active operations",
+        "responding": "coordinating emergency response",
+    }
+    action_phrase = action_map.get(action, "during a major current-affairs development")
 
-    org_clause = ""
-    if organizations:
-        org_names = [org for org in organizations if len(org) > 2 and org.lower() not in {"eeuu"}]
-        if org_names:
-            org_clause = f"representatives from {', '.join(org_names[:2])}"
+    editorial_context = _extract_keywords(
+        " ".join([sections.summary, sections.first_paragraph, sections.body, sections.tags]), n=5
+    )
+    context_terms = [term for term in editorial_context[:2] if len(term) > 4]
+    if context_terms:
+        context_clause = f"in a high-stakes current-affairs setting focused on {', '.join(context_terms)}"
+    else:
+        context_clause = "in a high-stakes current-affairs setting"
 
-    topic_keywords = _extract_keywords(" ".join([summary, first_paragraph, tags]), n=4)
-    scene_topics = [k for k in topic_keywords if " " in k or k in {"diplomacy", "defense", "trade", "energy", "migration"}]
-    topic_clause = ""
-    if scene_topics:
-        topic_clause = f"focus on {', '.join(scene_topics[:2])}"
+    anchors = ", ".join(scene["anchors"][:4])
 
-    source = f"{title} {summary} {first_paragraph}".lower()
-    flag_clause = ""
-    if ("eeuu" in source or "u.s." in source or "estados unidos" in source) and (
-        "américa latina" in source or "america latina" in source
-    ):
-        flag_clause = "U.S. and Latin American flags"
-
-    visual_parts = [
-        lead_clause,
-        *context_clauses,
-        org_clause,
-        topic_clause,
-        "official delegations",
-        "press photographers",
-        "conference hall",
-        flag_clause,
-        "realistic photojournalism",
-        "editorial photography",
-        "natural lighting",
-    ]
-    final_parts = _unique_nonempty([part for part in visual_parts if part])
-    return ", ".join(final_parts)
+    return ", ".join(
+        [
+            f"{subject} at a {event_label} in {location}, {action_phrase}",
+            f"{scene['scene']}, featuring {anchors}",
+            context_clause,
+            scene["shot"],
+            "realistic photojournalism, editorial photography, documentary realism, natural lighting, no fantasy, no advertising aesthetics",
+        ]
+    )
 
 
 def build_prompts(
@@ -390,12 +441,13 @@ def build_prompts(
     variants: int = 1,
 ) -> PromptPack:
     variants = max(1, min(variants, 2))
-    title, summary, tags, first_paragraph = _split_article_sections(text)
-    entities = _extract_entities(title, summary, tags, first_paragraph)
-    base = _build_editorial_prompt(title, summary, tags, first_paragraph, entities)
+    sections = _split_article_sections(text)
+    base = _build_editorial_prompt(sections)
 
     prompts = [base]
     if variants == 2:
-        prompts.append(f"{base}, tighter framing on delegates and negotiations, documentary composition")
+        prompts.append(
+            f"{base}, tighter framing around the central action and key visual anchors, maintain editorial realism"
+        )
 
     return PromptPack(positive_prompts=prompts, negative_prompt=negative_prompt)
