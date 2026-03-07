@@ -25,6 +25,7 @@ class PromptIntelligenceResult:
     confidence: float
     fallback_reason: Optional[str]
     raw_schema_version: str
+    strategy_adjustment_reason: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -34,6 +35,7 @@ class PromptPlan:
     strategy_effective: str
     domain: str
     source: PromptSource
+    strategy_adjustment_reason: Optional[str] = None
 
 
 @dataclass
@@ -62,6 +64,7 @@ class DocumentManifest:
     fallback_reason: Optional[str] = None
     openai_model: Optional[str] = None
     prompt_source: Optional[str] = None
+    strategy_adjustment_reason: Optional[str] = None
 
 
 @dataclass
