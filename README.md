@@ -1,6 +1,6 @@
 # Local Note Illustrator
 
-Aplicación de escritorio local en Python para **leer archivos `.docx` desde carpetas locales** y **generar imágenes con IA open-source (Diffusers + Stable Diffusion)**, guardando los resultados en la **misma subcarpeta del documento origen**.
+Aplicación de escritorio local en Python para **leer archivos `.docx` desde carpetas locales** y **generar imágenes con IA open-source (Diffusers + Stable Diffusion XL (SDXL))**, guardando los resultados en la **misma subcarpeta del documento origen**.
 
 Está pensada para ejecutarse en **Windows desde Anaconda Prompt** con Python 3.10.
 
@@ -13,10 +13,11 @@ Está pensada para ejecutarse en **Windows desde Anaconda Prompt** con Python 3.
 3. Escanea archivos `.docx` (ignora temporales `~$`).
 4. Lee texto con `python-docx`.
 5. Construye prompts visuales localmente (sin APIs pagas ni LLM externos).
-6. Genera 1 o 2 imágenes por documento con Diffusers.
+6. Genera 1 o 2 imágenes por documento con Diffusers usando SDXL.
 7. Guarda imágenes en la misma carpeta del `.docx`.
 8. Muestra logs, progreso y estado en la GUI.
 9. Permite abrir carpeta seleccionada y carpeta de logs desde la GUI.
+10. Permite exportar parámetros de ejecución en JSON desde la GUI.
 
 ---
 
@@ -45,6 +46,15 @@ local-note-illustrator/
 ```
 
 ---
+
+
+## Modelo SDXL por defecto
+
+- La app utiliza **stabilityai/stable-diffusion-xl-base-1.0** como modelo principal y único flujo de generación.
+- En la primera ejecución se descarga el modelo (requiere internet y puede tardar).
+- El modo CPU funciona, pero es significativamente más lento que CUDA.
+- Podés forzar CPU con `FORCE_CPU=true` en `.env`.
+- Desde la GUI podés usar **Exportar parámetros** para guardar `logs/run_config_YYYY-MM-DD_HH-MM-SS.json`.
 
 ## Requisitos
 
@@ -154,7 +164,7 @@ Guardá/cerrá cambios locales (`commit` o `stash`) y reintentá desde la GUI.
 ### 2) Error al cargar modelo Diffusers
 - Revisar conexión a internet la primera vez (descarga modelo).
 - Verificar espacio en disco y memoria VRAM/RAM.
-- Probar menor resolución (ej. `512x512`) y menos `steps`.
+- Probar menor resolución (ej. `768x768`) y menos `steps`.
 
 ### 3) `CUDA error: no kernel image is available for execution on the device`
 Significa que la GPU no es compatible con la build CUDA/PyTorch instalada.

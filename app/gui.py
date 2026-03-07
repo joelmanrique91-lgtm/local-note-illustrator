@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import json
 import queue
 import threading
+from datetime import datetime
 from pathlib import Path
 from tkinter import filedialog, messagebox
 
 import customtkinter as ctk
+import diffusers
+import torch
 
 from app.config import AppConfig
 from app.docx_reader import read_docx_text
@@ -54,7 +58,7 @@ class AppGUI(ctk.CTk):
 
         controls = ctk.CTkFrame(self)
         controls.grid(row=2, column=0, padx=12, pady=6, sticky="ew")
-        for i in range(6):
+        for i in range(7):
             controls.grid_columnconfigure(i, weight=1)
 
         self.btn_update = ctk.CTkButton(controls, text="Actualizar repo", command=self.update_repo)
@@ -63,6 +67,11 @@ class AppGUI(ctk.CTk):
         )
         self.btn_scan = ctk.CTkButton(controls, text="Escanear documentos", command=self.scan_documents)
         self.btn_generate = ctk.CTkButton(controls, text="Generar imágenes", command=self.generate_images)
+        self.btn_export_params = ctk.CTkButton(
+            controls,
+            text="Exportar parámetros",
+            command=self.export_parameters,
+        )
         self.btn_open_folder = ctk.CTkButton(
             controls, text="Abrir carpeta", command=self.open_selected_folder
         )
@@ -72,8 +81,9 @@ class AppGUI(ctk.CTk):
         self.btn_select.grid(row=0, column=1, padx=6, pady=6, sticky="ew")
         self.btn_scan.grid(row=0, column=2, padx=6, pady=6, sticky="ew")
         self.btn_generate.grid(row=0, column=3, padx=6, pady=6, sticky="ew")
-        self.btn_open_folder.grid(row=0, column=4, padx=6, pady=6, sticky="ew")
-        self.btn_open_logs.grid(row=0, column=5, padx=6, pady=6, sticky="ew")
+        self.btn_export_params.grid(row=0, column=4, padx=6, pady=6, sticky="ew")
+        self.btn_open_folder.grid(row=0, column=5, padx=6, pady=6, sticky="ew")
+        self.btn_open_logs.grid(row=0, column=6, padx=6, pady=6, sticky="ew")
 
         self.num_images_var = ctk.IntVar(value=self.config.default_num_images)
         self.include_subfolders_var = ctk.BooleanVar(value=True)
@@ -274,6 +284,35 @@ class AppGUI(ctk.CTk):
             self.after(0, lambda s=final_status: self._set_status(s))
 
         self._run_background(job)
+
+    def export_parameters(self) -> None:
+        timestamp = datetime.now()
+        runtime = self.image_generator.get_runtime_parameters()
+        data = {
+            "timestamp": timestamp.isoformat(timespec="seconds"),
+            "model_id": runtime["model_id"],
+            "device": runtime["device"],
+            "force_cpu": runtime["force_cpu"],
+            "width": runtime["width"],
+            "height": runtime["height"],
+            "steps": runtime["steps"],
+            "guidance_scale": runtime["guidance_scale"],
+            "negative_prompt": runtime["negative_prompt"],
+            "torch_version": torch.__version__,
+            "diffusers_version": diffusers.__version__,
+            "selected_root_folder": str(self.selected_root),
+            "images_per_document": self.num_images_var.get(),
+        }
+
+        self.config.log_dir.mkdir(parents=True, exist_ok=True)
+        file_path = self.config.log_dir / f"run_config_{timestamp.strftime('%Y-%m-%d_%H-%M-%S')}.json"
+
+        with file_path.open("w", encoding="utf-8") as handle:
+            json.dump(data, handle, ensure_ascii=False, indent=2)
+
+        self.logger.info("Parámetros exportados: %s", file_path)
+        self._set_status("Parámetros exportados")
+        messagebox.showinfo("Exportar parámetros", f"Archivo guardado en:\n{file_path}")
 
     def open_selected_folder(self) -> None:
         try:
