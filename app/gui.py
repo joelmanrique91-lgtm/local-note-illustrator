@@ -11,7 +11,7 @@ import customtkinter as ctk
 import diffusers
 import torch
 
-from app.config import AppConfig
+from app.config import AppConfig, INFERENCE_PRESETS, get_preset
 from app.docx_reader import read_docx_text
 from app.image_generator import ImageGenerator
 from app.logger import attach_gui_handler
@@ -20,6 +20,16 @@ from app.repo_updater import pull_current_branch
 from app.scanner import scan_docx_files
 from app.utils import open_path
 
+VISUAL_STRATEGY_OPTIONS = [
+    "auto",
+    "editorial_photo",
+    "conceptual",
+    "infographic_like",
+    "industrial",
+    "institutional",
+    "documentary_wide",
+]
+
 
 class AppGUI(ctk.CTk):
     def __init__(self, config: AppConfig, logger):
@@ -27,7 +37,7 @@ class AppGUI(ctk.CTk):
         self.config = config
         self.logger = logger
         self.title("Local Note Illustrator")
-        self.geometry("980x720")
+        self.geometry("1120x760")
 
         self.selected_root = Path.cwd()
         self.docx_jobs: list[Path] = []
@@ -58,7 +68,7 @@ class AppGUI(ctk.CTk):
 
         controls = ctk.CTkFrame(self)
         controls.grid(row=2, column=0, padx=12, pady=6, sticky="ew")
-        for i in range(7):
+        for i in range(8):
             controls.grid_columnconfigure(i, weight=1)
 
         self.btn_update = ctk.CTkButton(controls, text="Actualizar repo", command=self.update_repo)
@@ -75,6 +85,7 @@ class AppGUI(ctk.CTk):
         self.btn_open_folder = ctk.CTkButton(
             controls, text="Abrir carpeta", command=self.open_selected_folder
         )
+        self.btn_open_outputs = ctk.CTkButton(controls, text="Abrir outputs", command=self.open_outputs_folder)
         self.btn_open_logs = ctk.CTkButton(controls, text="Abrir logs", command=self.open_logs_folder)
 
         self.btn_update.grid(row=0, column=0, padx=6, pady=6, sticky="ew")
@@ -83,10 +94,13 @@ class AppGUI(ctk.CTk):
         self.btn_generate.grid(row=0, column=3, padx=6, pady=6, sticky="ew")
         self.btn_export_params.grid(row=0, column=4, padx=6, pady=6, sticky="ew")
         self.btn_open_folder.grid(row=0, column=5, padx=6, pady=6, sticky="ew")
-        self.btn_open_logs.grid(row=0, column=6, padx=6, pady=6, sticky="ew")
+        self.btn_open_outputs.grid(row=0, column=6, padx=6, pady=6, sticky="ew")
+        self.btn_open_logs.grid(row=0, column=7, padx=6, pady=6, sticky="ew")
 
         self.num_images_var = ctk.IntVar(value=self.config.default_num_images)
         self.include_subfolders_var = ctk.BooleanVar(value=True)
+        self.preset_var = ctk.StringVar(value=self.config.default_preset)
+        self.strategy_var = ctk.StringVar(value="auto")
 
         ctk.CTkLabel(controls, text="Imágenes por documento:").grid(
             row=1, column=0, padx=6, pady=6, sticky="e"
@@ -108,6 +122,30 @@ class AppGUI(ctk.CTk):
         )
         self.chk_subfolders.grid(row=1, column=2, padx=6, pady=6, sticky="w")
 
+        ctk.CTkLabel(controls, text="Preset:").grid(row=1, column=3, padx=6, pady=6, sticky="e")
+        self.option_preset = ctk.CTkOptionMenu(
+            controls,
+            values=list(INFERENCE_PRESETS.keys()),
+            command=lambda value: self.preset_var.set(value),
+        )
+        self.option_preset.set(self.config.default_preset)
+        self.option_preset.grid(row=1, column=4, padx=6, pady=6, sticky="w")
+
+        ctk.CTkLabel(controls, text="Estrategia visual:").grid(row=1, column=5, padx=6, pady=6, sticky="e")
+        self.option_strategy = ctk.CTkOptionMenu(
+            controls,
+            values=VISUAL_STRATEGY_OPTIONS,
+            command=lambda value: self.strategy_var.set(value),
+        )
+        self.option_strategy.set("auto")
+        self.option_strategy.grid(row=1, column=6, padx=6, pady=6, sticky="w")
+
+        ctk.CTkLabel(controls, text="Seed (vacío=aleatorio):").grid(
+            row=2, column=0, padx=6, pady=6, sticky="e"
+        )
+        self.seed_entry = ctk.CTkEntry(controls, placeholder_text="Ej: 12345")
+        self.seed_entry.grid(row=2, column=1, padx=6, pady=6, sticky="ew")
+
         self.progress = ctk.CTkProgressBar(self)
         self.progress.set(0)
         self.progress.grid(row=4, column=0, padx=12, pady=(6, 4), sticky="ew")
@@ -118,6 +156,15 @@ class AppGUI(ctk.CTk):
         self.log_box = ctk.CTkTextbox(self, wrap="word")
         self.log_box.grid(row=3, column=0, padx=12, pady=6, sticky="nsew")
         self.log_box.configure(state="disabled")
+
+    def _parse_seed(self) -> int | None:
+        raw = self.seed_entry.get().strip()
+        if not raw:
+            return None
+        try:
+            return int(raw)
+        except ValueError:
+            raise ValueError("Seed inválida. Debe ser un número entero o vacío.")
 
     def _enqueue_log(self, msg: str) -> None:
         self._queue.put(msg)
@@ -197,6 +244,11 @@ class AppGUI(ctk.CTk):
 
     def generate_images(self) -> None:
         def job():
+            selected_preset = self.preset_var.get()
+            selected_strategy = self.strategy_var.get()
+            preset = get_preset(selected_preset)
+            seed = self._parse_seed()
+
             if not self.docx_jobs:
                 self.logger.info("No hay documentos cargados, se ejecuta escaneo previo.")
                 self.docx_jobs = scan_docx_files(
@@ -217,13 +269,33 @@ class AppGUI(ctk.CTk):
             succeeded_docs = 0
             failed_docs: list[Path] = []
 
+            self.logger.info(
+                "Inicio lote | preset=%s strategy=%s seed=%s size=%sx%s steps=%s guidance=%.2f",
+                selected_preset,
+                selected_strategy,
+                seed if seed is not None else "aleatoria",
+                preset.width,
+                preset.height,
+                preset.steps,
+                preset.guidance_scale,
+            )
+
             for docx_path in self.docx_jobs:
                 try:
+                    self.after(0, lambda p=docx_path.name: self._set_status(f"Procesando: {p}"))
                     text = read_docx_text(docx_path)
                     prompts = build_prompts(
                         text=text,
                         negative_prompt=self.config.default_negative_prompt,
                         variants=self.num_images_var.get(),
+                        strategy_override=selected_strategy,
+                    )
+                    self.logger.info(
+                        "Documento=%s | domain=%s | strategy_effective=%s | human_closeup_risk=%s",
+                        docx_path.name,
+                        prompts.strategy_profile.domain,
+                        prompts.strategy_profile.visual_strategy,
+                        prompts.strategy_profile.human_closeup_risk,
                     )
                     for idx, prompt in enumerate(prompts.positive_prompts, start=1):
                         self.image_generator.generate(
@@ -231,6 +303,13 @@ class AppGUI(ctk.CTk):
                             positive_prompt=prompt,
                             negative_prompt=prompts.negative_prompt,
                             image_index=idx,
+                            steps=preset.steps,
+                            guidance_scale=preset.guidance_scale,
+                            width=preset.width,
+                            height=preset.height,
+                            seed=seed,
+                            preset_name=selected_preset,
+                            strategy_name=prompts.strategy_profile.visual_strategy,
                         )
                     succeeded_docs += 1
                     self.logger.info("Documento procesado: %s", docx_path)
@@ -287,12 +366,22 @@ class AppGUI(ctk.CTk):
 
     def export_parameters(self) -> None:
         timestamp = datetime.now()
-        runtime = self.image_generator.get_runtime_parameters()
+        preset = get_preset(self.preset_var.get())
+        runtime = self.image_generator.get_runtime_parameters(
+            width=preset.width,
+            height=preset.height,
+            steps=preset.steps,
+            guidance_scale=preset.guidance_scale,
+            seed=self._parse_seed(),
+        )
         data = {
             "timestamp": timestamp.isoformat(timespec="seconds"),
             "model_id": runtime["model_id"],
             "device": runtime["device"],
             "force_cpu": runtime["force_cpu"],
+            "preset": self.preset_var.get(),
+            "strategy_override": self.strategy_var.get(),
+            "seed": runtime["seed"],
             "width": runtime["width"],
             "height": runtime["height"],
             "steps": runtime["steps"],
@@ -320,12 +409,14 @@ class AppGUI(ctk.CTk):
         except Exception as exc:  # noqa: BLE001
             messagebox.showerror("Error", str(exc))
 
+    def open_outputs_folder(self) -> None:
+        self.open_selected_folder()
+
     def open_logs_folder(self) -> None:
         try:
             open_path(self.config.log_dir)
         except Exception as exc:  # noqa: BLE001
             messagebox.showerror("Error", str(exc))
-
 
 
 def launch_gui(config: AppConfig, logger) -> None:

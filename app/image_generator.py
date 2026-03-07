@@ -163,15 +163,21 @@ class ImageGenerator:
         steps: int,
         guidance_scale: float,
         negative_prompt: str,
+        seed: Optional[int],
+        preset_name: str,
+        strategy_name: str,
     ) -> None:
         self.logger.info(
-            "Inicio generación | model_id=%s | device=%s | width=%s | height=%s | steps=%s | guidance_scale=%s | negative_prompt=%s | force_cpu=%s",
+            "Inicio generación | model_id=%s | preset=%s | strategy=%s | device=%s | width=%s | height=%s | steps=%s | guidance_scale=%s | seed=%s | negative_prompt=%s | force_cpu=%s",
             self.config.model_id,
+            preset_name,
+            strategy_name,
             self.device,
             width,
             height,
             steps,
             guidance_scale,
+            seed if seed is not None else "aleatoria",
             negative_prompt,
             self.config.force_cpu,
         )
@@ -183,6 +189,7 @@ class ImageGenerator:
         height: Optional[int] = None,
         steps: Optional[int] = None,
         guidance_scale: Optional[float] = None,
+        seed: Optional[int] = None,
     ) -> dict[str, object]:
         return {
             "model_id": self.config.model_id,
@@ -196,6 +203,7 @@ class ImageGenerator:
                 if guidance_scale is not None
                 else self.config.default_guidance_scale
             ),
+            "seed": seed,
             "negative_prompt": (
                 negative_prompt
                 if negative_prompt is not None
@@ -214,6 +222,8 @@ class ImageGenerator:
         width: Optional[int] = None,
         height: Optional[int] = None,
         seed: Optional[int] = None,
+        preset_name: str = "custom",
+        strategy_name: str = "auto",
     ) -> Path:
         self._load_pipeline()
         assert self.pipeline is not None
@@ -229,6 +239,9 @@ class ImageGenerator:
             steps=steps,
             guidance_scale=guidance_scale,
             negative_prompt=negative_prompt,
+            seed=seed,
+            preset_name=preset_name,
+            strategy_name=strategy_name,
         )
         self.logger.info(
             "Generando imagen para '%s' (idx=%s) | steps=%s guidance=%.2f size=%sx%s",

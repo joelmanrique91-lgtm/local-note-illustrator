@@ -6,6 +6,7 @@ __all__ = [
     "repo_updater",
     "docx_reader",
     "prompt_builder",
+    "strategy",
     "image_generator",
     "scanner",
     "utils",
