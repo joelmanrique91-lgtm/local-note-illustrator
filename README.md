@@ -91,6 +91,7 @@ copy .env.example .env
 - `DEFAULT_HEIGHT`
 - `OUTPUT_FORMAT`
 - `LOG_DIR`
+- `FORCE_CPU` (usar `true` para desactivar CUDA manualmente)
 
 Si no existe `.env`, la app usa defaults internos sanos.
 
@@ -136,9 +137,11 @@ Siempre en la **misma subcarpeta** del `.docx` origen.
 
 ## Notas sobre GPU NVIDIA / CUDA
 
-- La app detecta automáticamente si hay CUDA (`torch.cuda.is_available()`).
+- La app valida CUDA de forma real antes de usarla (no solo `torch.cuda.is_available()`).
+- Si detecta errores de compatibilidad (ej. `no kernel image is available for execution on the device`), hace fallback automático a CPU.
 - Con CUDA usa `float16` para mejorar rendimiento/memoria.
-- Sin CUDA hace fallback a CPU (`float32`), más lento pero funcional.
+- En CPU usa `float32`; es más lento pero funcional.
+- Podés forzar CPU con `FORCE_CPU=true` en `.env`.
 - La carga del pipeline es perezosa (lazy): solo se carga al generar.
 
 ---
@@ -153,11 +156,16 @@ Guardá/cerrá cambios locales (`commit` o `stash`) y reintentá desde la GUI.
 - Verificar espacio en disco y memoria VRAM/RAM.
 - Probar menor resolución (ej. `512x512`) y menos `steps`.
 
-### 3) Generación muy lenta
+### 3) `CUDA error: no kernel image is available for execution on the device`
+Significa que la GPU no es compatible con la build CUDA/PyTorch instalada.
+La app ahora detecta este caso y reintenta automáticamente en CPU para continuar el proceso.
+Si querés evitar cualquier intento de CUDA, configurá `FORCE_CPU=true` en `.env`.
+
+### 4) Generación muy lenta
 - Confirmar instalación de PyTorch con CUDA para tu GPU.
 - Reducir `DEFAULT_STEPS` y/o tamaño de imagen.
 
-### 4) No encuentra `.docx`
+### 5) No encuentra `.docx`
 - Verificar carpeta raíz correcta.
 - Activar checkbox de subcarpetas.
 - Revisar que no sean archivos temporales `~$...`.
