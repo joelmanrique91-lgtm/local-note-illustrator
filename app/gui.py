@@ -15,9 +15,11 @@ from app.config import AppConfig, INFERENCE_PRESETS, get_preset
 from app.docx_reader import read_docx_text
 from app.image_generator import ImageGenerator
 from app.logger import attach_gui_handler
-from app.prompt_builder import build_prompts
+from app.manifest import RunManifestWriter
+from app.prompt_intelligence import resolve_prompt_plan
 from app.repo_updater import pull_current_branch
 from app.scanner import scan_docx_files
+from app.types import DocumentManifest
 from app.utils import open_path
 
 VISUAL_STRATEGY_OPTIONS = [
@@ -46,6 +48,7 @@ class AppGUI(ctk.CTk):
 
         self.gui_log_handler = attach_gui_handler(self.logger, self._enqueue_log)
         self.image_generator = ImageGenerator(config, logger)
+        self.manifest_writer = RunManifestWriter(config.log_dir)
 
         self._build_ui()
         self.after(100, self._flush_logs)
@@ -244,123 +247,195 @@ class AppGUI(ctk.CTk):
 
     def generate_images(self) -> None:
         def job():
-            selected_preset = self.preset_var.get()
-            selected_strategy = self.strategy_var.get()
-            preset = get_preset(selected_preset)
-            seed = self._parse_seed()
+            run_final_status = "failed"
+            manifest_started = False
+            manifest_closed = False
+            try:
+                selected_preset = self.preset_var.get()
+                selected_strategy = self.strategy_var.get()
+                preset = get_preset(selected_preset)
+                seed = self._parse_seed()
 
-            if not self.docx_jobs:
-                self.logger.info("No hay documentos cargados, se ejecuta escaneo previo.")
-                self.docx_jobs = scan_docx_files(
-                    self.selected_root,
+                config_snapshot = {
+                    "model_id": self.config.model_id,
+                    "output_format": self.config.output_format,
+                    "default_negative_prompt": self.config.default_negative_prompt,
+                    "default_preset": self.config.default_preset,
+                    "openai_enable": self.config.openai_enable,
+                    "openai_prompt_intelligence_mode": self.config.openai_prompt_intelligence_mode,
+                    "openai_model": self.config.openai_model,
+                    "openai_timeout_seconds": self.config.openai_timeout_seconds,
+                    "openai_max_retries": self.config.openai_max_retries,
+                    "openai_strict_schema": self.config.openai_strict_schema,
+                }
+                self.manifest_writer.start(
+                    selected_root_folder=self.selected_root,
                     include_subfolders=self.include_subfolders_var.get(),
+                    images_per_document=self.num_images_var.get(),
+                    config_snapshot=config_snapshot,
                 )
+                manifest_started = True
 
-            total = len(self.docx_jobs)
-            if total == 0:
+                if not self.docx_jobs:
+                    self.logger.info("No hay documentos cargados, se ejecuta escaneo previo.")
+                    self.docx_jobs = scan_docx_files(
+                        self.selected_root,
+                        include_subfolders=self.include_subfolders_var.get(),
+                    )
+
+                total = len(self.docx_jobs)
+                if total == 0:
+                    self.after(0, lambda: self.progress.set(0))
+                    self.after(0, lambda: self._set_status("No se encontraron .docx"))
+                    run_manifest_path = self.manifest_writer.finish(status="empty")
+                    manifest_closed = True
+                    self.logger.info("Manifest de corrida generado: %s", run_manifest_path)
+                    return
+
+                self.after(0, lambda: self._set_status("Generando imágenes..."))
                 self.after(0, lambda: self.progress.set(0))
-                self.after(0, lambda: self._set_status("No se encontraron .docx"))
-                return
 
-            self.after(0, lambda: self._set_status("Generando imágenes..."))
-            self.after(0, lambda: self.progress.set(0))
+                done = 0
+                succeeded_docs = 0
+                failed_docs: list[Path] = []
 
-            done = 0
-            succeeded_docs = 0
-            failed_docs: list[Path] = []
-
-            self.logger.info(
-                "Inicio lote | preset=%s strategy=%s seed=%s size=%sx%s steps=%s guidance=%.2f",
-                selected_preset,
-                selected_strategy,
-                seed if seed is not None else "aleatoria",
-                preset.width,
-                preset.height,
-                preset.steps,
-                preset.guidance_scale,
-            )
-
-            for docx_path in self.docx_jobs:
-                try:
-                    self.after(0, lambda p=docx_path.name: self._set_status(f"Procesando: {p}"))
-                    text = read_docx_text(docx_path)
-                    prompts = build_prompts(
-                        text=text,
-                        negative_prompt=self.config.default_negative_prompt,
-                        variants=self.num_images_var.get(),
-                        strategy_override=selected_strategy,
-                    )
-                    self.logger.info(
-                        "Documento=%s | domain=%s | strategy_effective=%s | human_closeup_risk=%s",
-                        docx_path.name,
-                        prompts.strategy_profile.domain,
-                        prompts.strategy_profile.visual_strategy,
-                        prompts.strategy_profile.human_closeup_risk,
-                    )
-                    for idx, prompt in enumerate(prompts.positive_prompts, start=1):
-                        self.image_generator.generate(
-                            docx_path=docx_path,
-                            positive_prompt=prompt,
-                            negative_prompt=prompts.negative_prompt,
-                            image_index=idx,
-                            steps=preset.steps,
-                            guidance_scale=preset.guidance_scale,
-                            width=preset.width,
-                            height=preset.height,
-                            seed=seed,
-                            preset_name=selected_preset,
-                            strategy_name=prompts.strategy_profile.visual_strategy,
-                        )
-                    succeeded_docs += 1
-                    self.logger.info("Documento procesado: %s", docx_path)
-                except Exception as exc:  # noqa: BLE001
-                    failed_docs.append(docx_path)
-                    self.logger.exception("Falló el documento %s: %s", docx_path, exc)
-                finally:
-                    done += 1
-                    progress = done / total
-                    self.after(0, lambda p=progress: self.progress.set(p))
-
-            failed_count = len(failed_docs)
-            if failed_count == 0:
-                final_status = "Generación completada"
                 self.logger.info(
-                    "Resultado final: éxito total (%s/%s documentos).", succeeded_docs, total
-                )
-                self.after(
-                    0,
-                    lambda: messagebox.showinfo(
-                        "Generación completada",
-                        f"Se procesaron correctamente {succeeded_docs} de {total} documentos.",
-                    ),
-                )
-            elif succeeded_docs > 0:
-                final_status = "Generación completada con errores"
-                self.logger.warning(
-                    "Resultado final: éxito parcial (%s ok, %s con error).",
-                    succeeded_docs,
-                    failed_count,
-                )
-                self.after(
-                    0,
-                    lambda: messagebox.showwarning(
-                        "Generación completada con errores",
-                        f"Se procesaron {succeeded_docs} de {total} documentos. "
-                        f"Fallaron {failed_count}. Revisá logs.",
-                    ),
-                )
-            else:
-                final_status = "Generación fallida"
-                self.logger.error("Resultado final: fallo total (%s/%s con error).", failed_count, total)
-                self.after(
-                    0,
-                    lambda: messagebox.showerror(
-                        "Generación fallida",
-                        "No se pudo generar imágenes para ningún documento. Revisá logs.",
-                    ),
+                    "Inicio lote | preset=%s strategy=%s seed=%s size=%sx%s steps=%s guidance=%.2f",
+                    selected_preset,
+                    selected_strategy,
+                    seed if seed is not None else "aleatoria",
+                    preset.width,
+                    preset.height,
+                    preset.steps,
+                    preset.guidance_scale,
                 )
 
-            self.after(0, lambda s=final_status: self._set_status(s))
+                for docx_path in self.docx_jobs:
+                    document_manifest = DocumentManifest(
+                        document_path=str(docx_path),
+                        source="local_fallback",
+                        strategy_override=selected_strategy,
+                        strategy_suggested="pending",
+                        strategy_effective="pending",
+                        domain="pending",
+                        preset=selected_preset,
+                        seed=seed,
+                        width=preset.width,
+                        height=preset.height,
+                        steps=preset.steps,
+                        guidance_scale=preset.guidance_scale,
+                        openai_status="pending",
+                        prompt_source="local_prompt_builder",
+                    )
+                    self.manifest_writer.add_document(document_manifest)
+                    try:
+                        self.after(0, lambda p=docx_path.name: self._set_status(f"Procesando: {p}"))
+                        text = read_docx_text(docx_path)
+                        resolution = resolve_prompt_plan(
+                            text=text,
+                            strategy_override=selected_strategy,
+                            config=self.config,
+                            logger=self.logger,
+                            variants=self.num_images_var.get(),
+                        )
+                        plan = resolution.prompt_plan
+                        intelligence = resolution.intelligence
+                        self.logger.info(
+                            "Documento=%s | source=%s | openai_status=%s | domain=%s | strategy_effective=%s | fallback_reason=%s",
+                            docx_path.name,
+                            plan.source,
+                            resolution.openai_status,
+                            plan.domain,
+                            plan.strategy_effective,
+                            intelligence.fallback_reason or "none",
+                        )
+                        document_manifest.source = plan.source
+                        document_manifest.openai_status = resolution.openai_status
+                        document_manifest.fallback_reason = intelligence.fallback_reason
+                        document_manifest.openai_model = self.config.openai_model
+                        document_manifest.prompt_source = plan.source
+                        document_manifest.strategy_suggested = intelligence.visual_strategy
+                        document_manifest.strategy_effective = plan.strategy_effective
+                        document_manifest.domain = plan.domain
+                        for idx, prompt in enumerate(plan.positive_prompts, start=1):
+                            output_path = self.image_generator.generate(
+                                docx_path=docx_path,
+                                positive_prompt=prompt,
+                                negative_prompt=plan.negative_prompt,
+                                image_index=idx,
+                                steps=preset.steps,
+                                guidance_scale=preset.guidance_scale,
+                                width=preset.width,
+                                height=preset.height,
+                                seed=seed,
+                                preset_name=selected_preset,
+                                strategy_name=plan.strategy_effective,
+                            )
+                            self.manifest_writer.append_output(document_manifest, idx, output_path)
+                        succeeded_docs += 1
+                        self.logger.info("Documento procesado: %s", docx_path)
+                    except Exception as exc:  # noqa: BLE001
+                        failed_docs.append(docx_path)
+                        document_manifest.openai_status = "error"
+                        self.manifest_writer.mark_document_error(document_manifest, str(exc))
+                        self.logger.exception("Falló el documento %s: %s", docx_path, exc)
+                    finally:
+                        done += 1
+                        progress = done / total
+                        self.after(0, lambda p=progress: self.progress.set(p))
+
+                failed_count = len(failed_docs)
+                if failed_count == 0:
+                    final_status = "Generación completada"
+                    run_final_status = "success"
+                    self.logger.info(
+                        "Resultado final: éxito total (%s/%s documentos).", succeeded_docs, total
+                    )
+                    self.after(
+                        0,
+                        lambda: messagebox.showinfo(
+                            "Generación completada",
+                            f"Se procesaron correctamente {succeeded_docs} de {total} documentos.",
+                        ),
+                    )
+                elif succeeded_docs > 0:
+                    final_status = "Generación completada con errores"
+                    run_final_status = "partial_success"
+                    self.logger.warning(
+                        "Resultado final: éxito parcial (%s ok, %s con error).",
+                        succeeded_docs,
+                        failed_count,
+                    )
+                    self.after(
+                        0,
+                        lambda: messagebox.showwarning(
+                            "Generación completada con errores",
+                            f"Se procesaron {succeeded_docs} de {total} documentos. "
+                            f"Fallaron {failed_count}. Revisá logs.",
+                        ),
+                    )
+                else:
+                    final_status = "Generación fallida"
+                    run_final_status = "failed"
+                    self.logger.error(
+                        "Resultado final: fallo total (%s/%s con error).", failed_count, total
+                    )
+                    self.after(
+                        0,
+                        lambda: messagebox.showerror(
+                            "Generación fallida",
+                            "No se pudo generar imágenes para ningún documento. Revisá logs.",
+                        ),
+                    )
+
+                self.after(0, lambda s=final_status: self._set_status(s))
+                run_manifest_path = self.manifest_writer.finish(status=run_final_status)
+                manifest_closed = True
+                self.logger.info("Manifest de corrida generado: %s", run_manifest_path)
+            finally:
+                if manifest_started and not manifest_closed:
+                    run_manifest_path = self.manifest_writer.finish(status=run_final_status)
+                    self.logger.info("Manifest de corrida generado (cierre de seguridad): %s", run_manifest_path)
 
         self._run_background(job)
 

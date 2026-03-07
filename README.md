@@ -12,13 +12,15 @@ Está pensada para ejecutarse en **Windows desde Anaconda Prompt** con Python 3.
 2. Permite seleccionar carpeta raíz local.
 3. Escanea archivos `.docx` (ignora temporales `~$`).
 4. Lee texto con `python-docx`.
-5. Analiza cada documento y selecciona estrategia visual local (sin APIs externas).
-6. Construye prompts editoriales con reglas anti-deformación y anti-close-up.
+5. Ejecuta inteligencia de prompt OpenAI-first para dominio, estrategia visual, riesgo y propuestas de prompt.
+6. Valida estructura de salida; si falla OpenAI, activa fallback local heurístico automáticamente.
 7. Genera 1 o 2 imágenes por documento con Diffusers usando SDXL usando presets (speed/balanced/quality/editorial_safe).
 8. Guarda imágenes en la misma carpeta del `.docx`.
 9. Muestra logs, progreso y estado en la GUI (incluye preset, estrategia y seed efectivas).
 10. Permite abrir carpeta seleccionada, outputs y carpeta de logs desde la GUI.
 11. Permite exportar parámetros de ejecución en JSON desde la GUI.
+12. Genera un manifest JSON por corrida (`logs/run_manifest_<run_id>.json`) con trazabilidad por documento.
+13. Usa OpenAI-first para inteligencia de prompts con fallback local de seguridad cuando corresponda.
 
 ---
 
@@ -39,6 +41,8 @@ local-note-illustrator/
     repo_updater.py
     docx_reader.py
     prompt_builder.py
+    manifest.py
+    types.py
     image_generator.py
     scanner.py
     utils.py
@@ -56,6 +60,7 @@ local-note-illustrator/
 - El modo CPU funciona, pero es significativamente más lento que CUDA.
 - Podés forzar CPU con `FORCE_CPU=true` en `.env`.
 - Desde la GUI podés usar **Exportar parámetros** para guardar `logs/run_config_YYYY-MM-DD_HH-MM-SS.json`.
+- Cada corrida de generación escribe además `logs/run_manifest_<run_id>.json`.
 
 ## Requisitos
 
@@ -96,6 +101,7 @@ copy .env.example .env
 - `MODEL_ID`
 - `DEFAULT_NEGATIVE_PROMPT`
 - `DEFAULT_NUM_IMAGES`
+- `DEFAULT_PRESET`
 - `DEFAULT_STEPS`
 - `DEFAULT_GUIDANCE_SCALE`
 - `DEFAULT_WIDTH`
@@ -103,6 +109,16 @@ copy .env.example .env
 - `OUTPUT_FORMAT`
 - `LOG_DIR`
 - `FORCE_CPU` (usar `true` para desactivar CUDA manualmente)
+- `OPENAI_ENABLE`
+- `OPENAI_API_KEY`
+- `OPENAI_MODEL`
+- `OPENAI_TIMEOUT_SECONDS`
+- `OPENAI_MAX_RETRIES`
+- `OPENAI_PROMPT_INTELLIGENCE_MODE` (default: `required_with_safety_fallback`)
+- `OPENAI_MAX_INPUT_CHARS`
+- `OPENAI_STRICT_SCHEMA`
+
+> La imagen final sigue siendo 100% local con SDXL; OpenAI se usa solo para inteligencia de prompt.
 
 Si no existe `.env`, la app usa defaults internos sanos.
 
@@ -174,6 +190,13 @@ La GUI ahora permite:
 
 Además podés definir `seed` manual; si queda vacío se usa seed aleatoria.
 
+
+## Prompt intelligence (OpenAI-first)
+
+- Flujo operativo actual: **OpenAI-first** para inteligencia de prompt, con fallback local seguro si hay timeout, red, auth/config o schema inválido.
+- El render final sigue siendo **100% local con SDXL**.
+- Fuente efectiva por documento (`openai` o `local_fallback`) queda registrada en logs y en `run_manifest_<run_id>.json`.
+
 ## Chequeo de entorno local
 
 Antes de lanzar la app podés ejecutar:
@@ -183,6 +206,7 @@ python scripts/check_env.py
 ```
 
 El script valida Python, dependencias críticas, CUDA/GPU, configuración y rutas básicas.
+También reporta estado de configuración OpenAI (sin prueba de conectividad ni llamada real a API).
 
 En Windows también podés usar:
 
