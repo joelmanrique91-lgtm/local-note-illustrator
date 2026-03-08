@@ -105,6 +105,7 @@ class PromptBuilderRenderFirstTests(unittest.TestCase):
         self.assertLessEqual(len(prompt), PROMPT_MAX_CHARS)
         self.assertIn("player signing moment at training ground", prompt)
 
+
     def test_valid_openai_plan_remains_compatible(self) -> None:
         intelligence = self._intelligence(
             prompt_variants=["news scene in research lab, scientist team, working with instruments, alternate angle"]
