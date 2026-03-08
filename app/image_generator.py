@@ -2,13 +2,17 @@ from __future__ import annotations
 
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import torch
 from diffusers import StableDiffusionXLPipeline
 
 from app.config import AppConfig
 from app.utils import safe_slug
+
+
+class ModelLoadError(RuntimeError):
+    pass
 
 
 class ImageGenerator:
@@ -82,6 +86,67 @@ class ImageGenerator:
             except Exception:  # noqa: BLE001
                 pass
 
+    @staticmethod
+    def _is_oom_error(exc: Exception) -> bool:
+        msg = str(exc).lower()
+        return "out of memory" in msg or "cuda out of memory" in msg
+
+    @staticmethod
+    def _is_hf_access_error(exc: Exception) -> bool:
+        msg = str(exc).lower()
+        patterns = (
+            "401",
+            "403",
+            "unauthorized",
+            "forbidden",
+            "repository not found",
+            "gated",
+            "access denied",
+            "huggingface",
+            "hf_hub",
+            "token",
+            "login",
+        )
+        return any(pattern in msg for pattern in patterns)
+
+    @staticmethod
+    def _is_checkpoint_incompatible_error(exc: Exception) -> bool:
+        msg = str(exc).lower()
+        patterns = (
+            "is not a folder containing",
+            "error no file named",
+            "unexpected key",
+            "size mismatch",
+            "state_dict",
+            "not compatible",
+            "config.json",
+        )
+        return any(pattern in msg for pattern in patterns)
+
+    def _build_model_load_error(self, exc: Exception) -> ModelLoadError:
+        base = f"No se pudo cargar el modelo '{self.config.model_id}'."
+        if self._is_oom_error(exc):
+            detail = (
+                "Memoria insuficiente (VRAM/RAM). Reducí resolución/steps o usá un preset más liviano."
+            )
+        elif self._is_hf_access_error(exc):
+            detail = (
+                "No hay acceso al repositorio en Hugging Face. Verificá conexión, login/token y permisos del modelo."
+            )
+        elif self._is_checkpoint_incompatible_error(exc):
+            detail = (
+                "El checkpoint no es compatible con StableDiffusionXLPipeline o está incompleto/corrupto."
+            )
+        else:
+            detail = "Error general al cargar el checkpoint Diffusers."
+        return ModelLoadError(f"{base} {detail} Error original: {exc}")
+
+    def _load_pipeline_from_pretrained(self, model_kwargs: dict[str, Any]) -> StableDiffusionXLPipeline:
+        try:
+            return StableDiffusionXLPipeline.from_pretrained(self.config.model_id, **model_kwargs)
+        except Exception as exc:  # noqa: BLE001
+            raise self._build_model_load_error(exc) from exc
+
     def _initialize_pipeline_on_device(self, device: str) -> StableDiffusionXLPipeline:
         dtype = torch.float16 if device == "cuda" else torch.float32
         self.logger.info(
@@ -91,10 +156,42 @@ class ImageGenerator:
             dtype,
         )
         start = time.perf_counter()
-        pipe = StableDiffusionXLPipeline.from_pretrained(
-            self.config.model_id,
-            torch_dtype=dtype,
-        )
+
+        if device == "cuda":
+            fp16_kwargs = {"torch_dtype": dtype, "use_safetensors": True, "variant": "fp16"}
+            self.logger.info(
+                "Intento de carga SDXL (model=%s, use_safetensors=%s, variant=%s)",
+                self.config.model_id,
+                fp16_kwargs["use_safetensors"],
+                fp16_kwargs["variant"],
+            )
+            try:
+                pipe = self._load_pipeline_from_pretrained(fp16_kwargs)
+            except ModelLoadError as exc:
+                exc_msg = str(exc).lower()
+                if "variant" in exc_msg or "fp16" in exc_msg or "no file named" in exc_msg:
+                    self.logger.warning(
+                        "El artefacto fp16 variant no está disponible; reintentando sin variant. Motivo: %s",
+                        exc,
+                    )
+                    fallback_kwargs = {"torch_dtype": dtype, "use_safetensors": True}
+                    self.logger.info(
+                        "Reintento de carga SDXL (model=%s, use_safetensors=%s, variant=none)",
+                        self.config.model_id,
+                        fallback_kwargs["use_safetensors"],
+                    )
+                    pipe = self._load_pipeline_from_pretrained(fallback_kwargs)
+                else:
+                    raise
+        else:
+            cpu_kwargs = {"torch_dtype": dtype, "use_safetensors": True}
+            self.logger.info(
+                "Intento de carga SDXL (model=%s, use_safetensors=%s, variant=none)",
+                self.config.model_id,
+                cpu_kwargs["use_safetensors"],
+            )
+            pipe = self._load_pipeline_from_pretrained(cpu_kwargs)
+
         pipe = pipe.to(device)
         if device == "cuda":
             pipe.enable_attention_slicing()

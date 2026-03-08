@@ -55,7 +55,7 @@ local-note-illustrator/
 
 ## Modelo SDXL por defecto
 
-- La app utiliza **stabilityai/stable-diffusion-xl-base-1.0** como modelo principal y único flujo de generación.
+- La app utiliza **SG161222/RealVisXL_V5.0** como modelo SDXL principal.
 - En la primera ejecución se descarga el modelo (requiere internet y puede tardar).
 - El modo CPU funciona, pero es significativamente más lento que CUDA.
 - Podés forzar CPU con `FORCE_CPU=true` en `.env`.
@@ -123,6 +123,23 @@ copy .env.example .env
 > La imagen final sigue siendo 100% local con SDXL; OpenAI se usa solo para inteligencia de prompt.
 
 Si no existe `.env`, la app usa defaults internos sanos.
+
+
+### Hugging Face (primer arranque y autenticación opcional)
+
+- En el primer arranque, Diffusers descarga el checkpoint del `MODEL_ID` configurado.
+- Si el entorno presenta límites de descarga/autenticación, podés iniciar sesión:
+
+```bash
+huggingface-cli login
+```
+
+- También podés usar token por variable de entorno (`HF_TOKEN` o `HUGGINGFACE_HUB_TOKEN`).
+- Rollback inmediato al modelo anterior:
+
+```env
+MODEL_ID=stabilityai/stable-diffusion-xl-base-1.0
+```
 
 ---
 
@@ -250,19 +267,23 @@ Guardá/cerrá cambios locales (`commit` o `stash`) y reintentá desde la GUI.
 
 ### 2) Error al cargar modelo Diffusers
 - Revisar conexión a internet la primera vez (descarga modelo).
-- Verificar espacio en disco y memoria VRAM/RAM.
-- Probar menor resolución (ej. `768x768`) y menos `steps`.
+- Si hay error de acceso/autenticación: ejecutar `huggingface-cli login` o configurar `HF_TOKEN` / `HUGGINGFACE_HUB_TOKEN`.
+- Verificar que `MODEL_ID` exista y sea compatible con SDXL.
 
-### 3) `CUDA error: no kernel image is available for execution on the device`
+### 3) Out of memory (VRAM/RAM)
+- Bajar preset (ej. `speed`) o usar menor resolución (`768x768`) y menos `steps`.
+- Reintentar con `FORCE_CPU=true` si necesitás continuar sin GPU.
+
+### 4) `CUDA error: no kernel image is available for execution on the device`
 Significa que la GPU no es compatible con la build CUDA/PyTorch instalada.
 La app ahora detecta este caso y reintenta automáticamente en CPU para continuar el proceso.
 Si querés evitar cualquier intento de CUDA, configurá `FORCE_CPU=true` en `.env`.
 
-### 4) Generación muy lenta
+### 5) Generación muy lenta
 - Confirmar instalación de PyTorch con CUDA para tu GPU.
 - Reducir `DEFAULT_STEPS` y/o tamaño de imagen.
 
-### 5) No encuentra `.docx`
+### 6) No encuentra `.docx`
 - Verificar carpeta raíz correcta.
 - Activar checkbox de subcarpetas.
 - Revisar que no sean archivos temporales `~$...`.

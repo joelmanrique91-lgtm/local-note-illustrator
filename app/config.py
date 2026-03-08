@@ -161,7 +161,7 @@ def load_config() -> AppConfig:
     }
 
     return AppConfig(
-        model_id=os.getenv("MODEL_ID", "stabilityai/stable-diffusion-xl-base-1.0"),
+        model_id=os.getenv("MODEL_ID", "SG161222/RealVisXL_V5.0"),
         default_negative_prompt=os.getenv(
             "DEFAULT_NEGATIVE_PROMPT",
             "distorted face, malformed anatomy, deformed hands, extra fingers, extra limbs, "
