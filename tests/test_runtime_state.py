@@ -10,7 +10,7 @@ from app.runtime_state import RuntimeResolver, build_export_payload
 class RuntimeStateTests(unittest.TestCase):
     def setUp(self) -> None:
         self.config = AppConfig(
-            model_id="stabilityai/stable-diffusion-xl-base-1.0",
+            model_id="SG161222/RealVisXL_V5.0",
             default_negative_prompt="blurry, watermark",
             default_num_images=1,
             default_steps=30,
@@ -61,6 +61,7 @@ class RuntimeStateTests(unittest.TestCase):
         self.assertEqual(runtime.width.value, 1024)
         self.assertEqual(runtime.width.source, "preset")
         self.assertEqual(runtime.model_id.source, "env")
+        self.assertEqual(runtime.model_id.value, "SG161222/RealVisXL_V5.0")
         self.assertEqual(runtime.seed.source, "gui")
         self.assertEqual(runtime.images_per_document.source, "gui")
 
@@ -110,6 +111,7 @@ class RuntimeStateTests(unittest.TestCase):
 
         self.assertIn("runtime_effective", payload)
         self.assertEqual(payload["runtime_effective"]["device"]["value"], "cpu")
+        self.assertEqual(payload["runtime_effective"]["model_id"]["value"], "SG161222/RealVisXL_V5.0")
         self.assertEqual(payload["runtime_effective"]["cuda_fallback_triggered"]["value"], True)
         self.assertEqual(payload["documents"][0]["domain"], "political_institutional")
         self.assertEqual(payload["documents"][0]["outputs"][0]["file_size_bytes"], 123456)
