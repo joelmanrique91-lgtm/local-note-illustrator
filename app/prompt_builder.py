@@ -81,13 +81,7 @@ SPORTS_EDITORIAL_NEGATIVE_TERMS = [
     "crest",
     "emblem",
     "shield logo",
-    "poster",
-    "poster layout",
-    "infographic",
-    "infographic board",
     "fake typography",
-    "readable text",
-    "visible typography",
     "jersey logo close-up",
     "soccer emblem collage",
     "collage of club symbols",
@@ -118,12 +112,6 @@ BASE_NEGATIVE_TERMS = [
     "duplicate face",
     "asymmetrical eyes",
     "crossed eyes",
-    "plastic skin",
-    "uncanny valley",
-    "oversaturated colors",
-    "fake cinematic glow",
-    "artificial render",
-    "warped perspective",
 ]
 
 DOMAIN_NEGATIVE_TERMS = {

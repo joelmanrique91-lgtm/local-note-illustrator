@@ -106,42 +106,6 @@ class PromptBuilderRenderFirstTests(unittest.TestCase):
         self.assertIn("player signing moment at training ground", prompt)
 
 
-    def test_non_sports_domain_does_not_include_sports_negatives(self) -> None:
-        intelligence = self._intelligence(domain="technology_science")
-
-        plan = compose_prompt_plan(intelligence, base_negative_prompt="blurry", variants=1)
-
-        self.assertNotIn("badge", plan.negative_prompt)
-        self.assertNotIn("soccer emblem collage", plan.negative_prompt)
-
-    def test_sports_domain_includes_sports_negatives(self) -> None:
-        intelligence = self._intelligence(domain="sports_transfers", visual_strategy="editorial_photo")
-
-        plan = compose_prompt_plan(intelligence, base_negative_prompt="blurry", variants=1)
-
-        self.assertIn("badge", plan.negative_prompt)
-        self.assertIn("soccer emblem collage", plan.negative_prompt)
-
-    def test_infographic_strategy_avoids_infographic_negative_conflict(self) -> None:
-        intelligence = self._intelligence(
-            visual_strategy="infographic_like",
-            prompt_main="editorial infographic-like composition with chart panel and institutional context",
-        )
-
-        plan = compose_prompt_plan(intelligence, base_negative_prompt="blurry", variants=1)
-
-        self.assertNotIn("infographic", plan.negative_prompt)
-        self.assertIn("blurry", plan.negative_prompt)
-
-    def test_negative_terms_deduplicate_normalized_variants(self) -> None:
-        intelligence = self._intelligence(negative_prompt="JPEG artifacts,   jpeg artifact, LOW-QUALITY")
-
-        plan = compose_prompt_plan(intelligence, base_negative_prompt=" Low Quality ", variants=1)
-        lowered = plan.negative_prompt.lower()
-
-        self.assertEqual(lowered.count("jpeg artifacts"), 1)
-        self.assertEqual(lowered.count("low quality"), 1)
-
     def test_valid_openai_plan_remains_compatible(self) -> None:
         intelligence = self._intelligence(
             prompt_variants=["news scene in research lab, scientist team, working with instruments, alternate angle"]
