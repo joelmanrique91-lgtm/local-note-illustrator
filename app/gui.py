@@ -327,6 +327,10 @@ class AppGUI(ctk.CTk):
                         openai_status="pending",
                         prompt_source="local_prompt_builder",
                         strategy_adjustment_reason=None,
+                        semantic_adjustment_reason=None,
+                        semantic_validation_status=None,
+                        final_positive_prompt=None,
+                        final_negative_prompt=None,
                     )
                     self.manifest_writer.add_document(document_manifest)
                     try:
@@ -360,6 +364,10 @@ class AppGUI(ctk.CTk):
                         document_manifest.strategy_effective = plan.strategy_effective
                         document_manifest.domain = plan.domain
                         document_manifest.strategy_adjustment_reason = plan.strategy_adjustment_reason
+                        document_manifest.semantic_adjustment_reason = plan.semantic_adjustment_reason
+                        document_manifest.semantic_validation_status = plan.semantic_validation_status
+                        document_manifest.final_positive_prompt = " || ".join(plan.positive_prompts)
+                        document_manifest.final_negative_prompt = plan.negative_prompt
                         for idx, prompt in enumerate(plan.positive_prompts, start=1):
                             output_path = self.image_generator.generate(
                                 docx_path=docx_path,

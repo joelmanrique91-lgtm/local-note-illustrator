@@ -555,6 +555,8 @@ def compose_prompt_plan(
         domain=intelligence.domain,
         source=intelligence.source,
         strategy_adjustment_reason=intelligence.strategy_adjustment_reason,
+        semantic_adjustment_reason=intelligence.semantic_adjustment_reason,
+        semantic_validation_status=intelligence.semantic_validation_status,
     )
 
 

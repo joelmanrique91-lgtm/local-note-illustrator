@@ -31,6 +31,10 @@ class ManifestTests(unittest.TestCase):
                 openai_status="success",
                 openai_model="gpt-4.1-mini",
                 prompt_source="openai",
+                semantic_adjustment_reason="political_news_simplified:secondary_subjects_capped",
+                semantic_validation_status="simplified",
+                final_positive_prompt="official delegation meeting, conference room",
+                final_negative_prompt="blurry, low quality",
             )
             writer.add_document(doc)
             writer.append_output(doc, 1, Path("/tmp/docs/a_img_01.jpg"))
@@ -40,6 +44,8 @@ class ManifestTests(unittest.TestCase):
             self.assertEqual(payload["run_id"], run.run_id)
             self.assertEqual(payload["status"], "success")
             self.assertEqual(payload["documents"][0]["source"], "openai")
+            self.assertIn("official delegation meeting", payload["documents"][0]["final_positive_prompt"])
+            self.assertEqual(payload["documents"][0]["final_negative_prompt"], "blurry, low quality")
 
 
 if __name__ == "__main__":

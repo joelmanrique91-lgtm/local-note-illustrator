@@ -43,6 +43,8 @@ def _apply_manual_override(intelligence: PromptIntelligenceResult, strategy_over
         fallback_reason=intelligence.fallback_reason,
         raw_schema_version=intelligence.raw_schema_version,
         strategy_adjustment_reason=intelligence.strategy_adjustment_reason,
+        semantic_adjustment_reason=intelligence.semantic_adjustment_reason,
+        semantic_validation_status=intelligence.semantic_validation_status,
     )
 
 
@@ -73,6 +75,8 @@ def _enforce_sports_visual_policy(intelligence: PromptIntelligenceResult, text: 
             fallback_reason=intelligence.fallback_reason,
             raw_schema_version=intelligence.raw_schema_version,
             strategy_adjustment_reason=intelligence.strategy_adjustment_reason,
+            semantic_adjustment_reason=intelligence.semantic_adjustment_reason,
+            semantic_validation_status=intelligence.semantic_validation_status,
         )
 
     reason = f"domain_policy:sports_transfers_forced_from_{intelligence.visual_strategy}"
@@ -95,6 +99,8 @@ def _enforce_sports_visual_policy(intelligence: PromptIntelligenceResult, text: 
         fallback_reason=intelligence.fallback_reason,
         raw_schema_version=intelligence.raw_schema_version,
         strategy_adjustment_reason=reason,
+        semantic_adjustment_reason=intelligence.semantic_adjustment_reason,
+        semantic_validation_status=intelligence.semantic_validation_status,
     )
 
 
