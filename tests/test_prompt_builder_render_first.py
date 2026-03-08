@@ -170,6 +170,27 @@ class PromptBuilderRenderFirstTests(unittest.TestCase):
         self.assertIn("senior officials and delegates", prompt.lower())
         self.assertNotIn("Pete Hegseth", prompt)
 
+
+    def test_political_equivalent_domain_triggers_sanitization(self) -> None:
+        intelligence = self._intelligence(
+            domain="political_diplomatic_event",
+            visual_strategy="institutional",
+            prompt_main=(
+                "Donald Trump at summit table, Pete Hegseth near delegates, "
+                "official conference room with Latin American leaders"
+            ),
+            composition_notes="delegates seated, press-photo realism, medium-wide framing",
+        )
+
+        plan = compose_prompt_plan(intelligence, base_negative_prompt="blurry", variants=1)
+        prompt = plan.positive_prompts[0]
+
+        self.assertIn("senior officials and delegates", prompt.lower())
+        self.assertNotIn("Donald Trump", prompt)
+        self.assertNotIn("Pete Hegseth", prompt)
+        self.assertTrue((plan.sanitation_flags or {}).get("political_guard_triggered"))
+        self.assertTrue((plan.sanitation_flags or {}).get("political_domain_equivalent_detected"))
+
     def test_prompt_remains_compact_and_natural(self) -> None:
         intelligence = self._intelligence(
             domain="economy_markets",

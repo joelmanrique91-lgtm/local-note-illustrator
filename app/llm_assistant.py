@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.config import AppConfig
-from app.prompt_builder import build_document_context
+from app.prompt_builder import build_document_context, is_political_domain_equivalent
 from app.types import PromptIntelligenceResult
 
 ALLOWED_STRATEGIES = {
@@ -52,7 +52,6 @@ IDENTITY_FORCE_HINTS = {
 }
 
 FLAG_OVERLOAD_HINTS = {"flag", "flags", "banner", "emblem", "crest"}
-POLITICAL_DOMAINS = {"political_institutional", "political_news"}
 ABSTRACT_POLITICAL_SETTING_HINTS = {
     "policy environment",
     "institutional significance",
@@ -224,6 +223,32 @@ class OpenAIPromptAssistant:
         matches = re.findall(r"\b[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+\b", text)
         return len(matches) >= 2
 
+    def _is_political_domain(self, domain: str) -> bool:
+        return is_political_domain_equivalent(domain)
+
+    def _extract_trace_payload(self, payload: dict[str, Any]) -> dict[str, object]:
+        setting = str(payload.get("setting", "")).strip()
+        composition = str(payload.get("composition_notes", "")).strip() or str(payload.get("framing", "")).strip()
+        style_notes = str(payload.get("style_notes", "")).strip()
+        if not style_notes:
+            mood = str(payload.get("mood", "")).strip()
+            realism = str(payload.get("realism_notes", "")).strip()
+            style_notes = ", ".join(part for part in [mood, realism] if part)
+
+        trace = {
+            "domain": str(payload.get("domain", "")).strip(),
+            "visual_strategy": str(payload.get("visual_strategy", "")).strip(),
+            "primary_subject": str(payload.get("primary_subject", "")).strip(),
+            "secondary_subjects": self._coerce_string_list(payload.get("secondary_subjects")),
+            "setting": setting,
+            "composition_notes": composition,
+            "style_notes": style_notes,
+        }
+        prompt_main = str(payload.get("prompt_main", "")).strip()
+        if prompt_main:
+            trace["prompt_main"] = prompt_main
+        return trace
+
     def _is_abstract_political_setting(self, setting: str) -> bool:
         lowered = setting.lower().strip()
         if not lowered:
@@ -242,7 +267,7 @@ class OpenAIPromptAssistant:
         mood: str,
         realism_notes: str,
     ) -> tuple[str, list[str], str, str, list[str], str, str, str, bool, str | None]:
-        if domain not in POLITICAL_DOMAINS:
+        if not self._is_political_domain(domain):
             return (
                 primary_subject,
                 secondary_subjects,
@@ -270,8 +295,10 @@ class OpenAIPromptAssistant:
             simplified = True
             simplification_reason = simplification_reason or "political_news_simplified:symbol_overload_reduced"
 
-        if self._contains_multi_named_people(primary_subject):
+        combined_subjects = " ".join([primary_subject, *secondary_subjects])
+        if self._contains_multi_named_people(combined_subjects):
             primary_subject = "senior government delegation"
+            secondary_subjects = ["senior officials and delegates"]
             simplified = True
             simplification_reason = simplification_reason or "political_news_simplified:identity_generalized"
 
@@ -431,4 +458,5 @@ class OpenAIPromptAssistant:
             raw_schema_version="openai.v2.render_ready",
             semantic_adjustment_reason=simplification_reason,
             semantic_validation_status=semantic_status,
+            openai_raw_payload=self._extract_trace_payload(payload),
         )

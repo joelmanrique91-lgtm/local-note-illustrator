@@ -200,6 +200,35 @@ class LlmAssistantRenderReadyTests(unittest.TestCase):
         self.assertEqual(result.semantic_validation_status, "simplified")
         self.assertIn("political_news_simplified", result.semantic_adjustment_reason or "")
 
+
+    def test_political_diplomatic_domain_alias_triggers_same_policy(self) -> None:
+        payload = {
+            "domain": "political_diplomatic_event",
+            "visual_strategy": "institutional",
+            "human_closeup_risk": 4,
+            "confidence": 0.82,
+            "primary_subject": "Emmanuel Macron and Olaf Scholz",
+            "secondary_subjects": ["Donald Trump", "Pete Hegseth", "leader three"],
+            "primary_action": "formal diplomatic handshake",
+            "setting": "state hall",
+            "visible_objects": ["national flags", "delegation banners", "conference badges", "microphones", "nameplates", "backdrop", "media wall"],
+            "framing": "",
+            "mood": "",
+            "realism_notes": "",
+            "avoid_close_ups": True,
+            "avoid_identity_claims": True,
+            "avoid_multi_person_overload": True,
+            "prompt_variants": [],
+            "negative_prompt": "low quality",
+        }
+
+        result = self.assistant._validate_payload(payload)
+
+        self.assertEqual(result.semantic_validation_status, "simplified")
+        self.assertIn("political_news_simplified", result.semantic_adjustment_reason or "")
+        self.assertIn("senior government delegation", result.prompt_main)
+        self.assertIsNotNone(result.openai_raw_payload)
+
     def test_simplify_return_shape_matches_unpack_contract(self) -> None:
         simplified = self.assistant._simplify_political_payload(
             domain="political_institutional",
