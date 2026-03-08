@@ -102,6 +102,19 @@ NEGATIVE_GROUPS = {
     "sports_editorial": ", ".join(SPORTS_EDITORIAL_NEGATIVE_TERMS),
 }
 
+PROMPT_MAX_CHARS = 360
+
+ABSTRACT_NOTE_PATTERNS = (
+    "credible editorial realism",
+    "high-stakes setting",
+    "institutional significance",
+    "policy environment",
+    "local heuristic composition",
+    "local heuristic editorial style",
+    "safe diffusion composition",
+    "balanced editorial framing",
+)
+
 
 @dataclass
 class PromptPack:
@@ -217,6 +230,118 @@ def compose_negative_prompt(base_negative: str, extra_negative: str = "") -> str
     return _unique_negative_terms(grouped, extra_negative.strip(), base_negative.strip())
 
 
+def _split_segments(text: str) -> list[str]:
+    parts = re.split(r"[,;]", text)
+    return [_normalize_text(part) for part in parts if _normalize_text(part)]
+
+
+def _is_abstract_segment(segment: str) -> bool:
+    lowered = segment.lower()
+    return any(pattern in lowered for pattern in ABSTRACT_NOTE_PATTERNS)
+
+
+def _sanitize_note_segments(text: str) -> list[str]:
+    clean: list[str] = []
+    seen: set[str] = set()
+    for segment in _split_segments(text):
+        key = segment.lower()
+        if key in seen:
+            continue
+        if _is_abstract_segment(segment):
+            continue
+        seen.add(key)
+        clean.append(segment)
+    return clean
+
+
+def _segment_concrete_score(segment: str) -> int:
+    lowered = segment.lower()
+    score = 0
+    if any(token in lowered for token in (" in ", " at ", "inside", "outside", "street", "room", "stadium", "lab", "factory")):
+        score += 2
+    if any(token in lowered for token in ("with", "showing", "holding", "near", "background", "foreground")):
+        score += 1
+    if re.search(r"\d", segment):
+        score += 1
+    if len(segment.split()) >= 4:
+        score += 1
+    if _is_abstract_segment(segment):
+        score -= 3
+    return score
+
+
+def _semantic_core_segments(segments: list[str], max_items: int = 4) -> list[str]:
+    if not segments:
+        return []
+
+    indexed = list(enumerate(segments))
+    ranked = sorted(
+        indexed,
+        key=lambda item: (_segment_concrete_score(item[1]), -item[0]),
+        reverse=True,
+    )
+    selected = sorted(idx for idx, _ in ranked[:max_items])
+    return [segments[idx] for idx in selected if _segment_concrete_score(segments[idx]) >= 0]
+
+
+def _append_with_budget(result_parts: list[str], block: str, max_chars: int) -> bool:
+    value = _normalize_text(block)
+    if not value:
+        return True
+    candidate = ", ".join([*result_parts, value])
+    if len(candidate) <= max_chars:
+        result_parts.append(value)
+        return True
+    return False
+
+
+def _compose_render_first_prompt(
+    prompt_main: str,
+    composition_notes: str,
+    style_notes: str,
+    avoid_close_ups: bool,
+    domain: str,
+    max_chars: int = PROMPT_MAX_CHARS,
+) -> str:
+    main_segments_raw = _split_segments(prompt_main)
+    main_segments = [segment for segment in main_segments_raw if not _is_abstract_segment(segment)]
+    if not main_segments:
+        main_segments = ["editorial documentary scene"]
+
+    semantic_core = _semantic_core_segments(main_segments, max_items=4)
+    remaining_main = [segment for segment in main_segments if segment not in semantic_core]
+
+    composition_segments = _sanitize_note_segments(composition_notes)
+    style_segments = _sanitize_note_segments(style_notes)
+
+    style = ", ".join(style_segments[:2]) if style_segments else ""
+    guardrails = ["natural proportions", "realistic visual details"]
+    if avoid_close_ups:
+        guardrails.insert(0, "medium or wide framing")
+
+    sports_priority: list[str] = []
+    if domain == "sports_transfers":
+        sports_priority = [SPORTS_EDITORIAL_POSITIVE_GUARDRAILS[0]]
+        guardrails.extend(SPORTS_EDITORIAL_POSITIVE_GUARDRAILS[1:])
+
+    result_parts: list[str] = []
+
+    for block in [*semantic_core, *sports_priority, *remaining_main, *composition_segments]:
+        if not _append_with_budget(result_parts, block, max_chars):
+            remaining = max_chars - len(", ".join(result_parts)) - 2
+            if remaining > 20:
+                result_parts.append(_normalize_text(block)[:remaining].rstrip(" ,.;:-"))
+            return ", ".join(result_parts)
+
+    # Lower priority blocks: if budget overflows, skip silently.
+    if style:
+        _append_with_budget(result_parts, style, max_chars)
+    for block in guardrails:
+        _append_with_budget(result_parts, block, max_chars)
+
+    return ", ".join(result_parts)
+
+
 def _build_prompt_from_strategy(sections: ArticleSections, profile: StrategyProfile) -> str:
     source = " ".join(
         [sections.title, sections.summary, sections.tags, sections.first_paragraph, sections.body]
@@ -305,16 +430,16 @@ def compose_prompt_plan(
     if len(positives) < variants:
         positives.append(f"{main}, alternate angle, composition remains stable")
 
-    safe_addons = [
-        intelligence.composition_notes.strip(),
-        intelligence.style_notes.strip(),
-        "avoid close-up portraits" if intelligence.avoid_close_ups else "",
-        "credible editorial realism",
+    positives = [
+        _compose_render_first_prompt(
+            prompt_main=prompt,
+            composition_notes=intelligence.composition_notes,
+            style_notes=intelligence.style_notes,
+            avoid_close_ups=intelligence.avoid_close_ups,
+            domain=intelligence.domain,
+        )
+        for prompt in positives
     ]
-    positives = [", ".join(part for part in [prompt, *safe_addons] if part) for prompt in positives]
-
-    if intelligence.domain == "sports_transfers":
-        positives = [", ".join([prompt, *SPORTS_EDITORIAL_POSITIVE_GUARDRAILS]) for prompt in positives]
 
     combined_negative = compose_negative_prompt(
         base_negative=base_negative_prompt,
