@@ -30,6 +30,7 @@ class PromptBuilderNegativePromptTests(unittest.TestCase):
             BASE_NEGATIVE_TERMS,
             [
                 "blurry",
+                "blurry details",
                 "low quality",
                 "jpeg artifacts",
                 "unreadable text",
@@ -44,6 +45,8 @@ class PromptBuilderNegativePromptTests(unittest.TestCase):
                 "duplicate face",
                 "asymmetrical eyes",
                 "crossed eyes",
+                "plastic skin",
+                "uncanny",
             ],
         )
 
@@ -87,6 +90,53 @@ class PromptBuilderNegativePromptTests(unittest.TestCase):
 
         self.assertEqual(lowered.count("jpeg artifacts"), 1)
         self.assertEqual(lowered.count("low quality"), 1)
+
+    def test_political_group_scene_suppresses_conflicting_group_negatives(self) -> None:
+        intelligence = self._intelligence(
+            domain="political_institutional",
+            visual_strategy="institutional",
+            prompt_main="summit conference with delegation group at official press room",
+            negative_prompt="chaotic crowd, large groups, extreme close-up portrait",
+        )
+
+        plan = compose_prompt_plan(intelligence, base_negative_prompt="blurry", variants=1)
+        lowered = plan.negative_prompt.lower()
+
+        self.assertNotIn("chaotic crowd", lowered)
+        self.assertNotIn("large groups", lowered)
+        self.assertNotIn("extreme close-up portrait", lowered)
+        self.assertIn("deformed hands", lowered)
+
+    def test_sports_scene_suppresses_group_conflicts_but_keeps_structural_terms(self) -> None:
+        intelligence = self._intelligence(
+            domain="sports_transfers",
+            visual_strategy="editorial_photo",
+            prompt_main="team signing at stadium with group of players and staff",
+            negative_prompt="chaotic crowd, crowded scenes",
+        )
+
+        plan = compose_prompt_plan(intelligence, base_negative_prompt="blurry", variants=1)
+        lowered = plan.negative_prompt.lower()
+
+        self.assertNotIn("chaotic crowd", lowered)
+        self.assertNotIn("crowded scenes", lowered)
+        self.assertIn("badge", lowered)
+        self.assertIn("extra fingers", lowered)
+
+    def test_disaster_scene_allows_documentary_wide_group_context(self) -> None:
+        intelligence = self._intelligence(
+            domain="conflict_disaster_crisis",
+            visual_strategy="documentary_wide",
+            prompt_main="rescue team and evacuees in wide emergency response scene",
+            negative_prompt="large group, chaotic crowd",
+        )
+
+        plan = compose_prompt_plan(intelligence, base_negative_prompt="blurry", variants=1)
+        lowered = plan.negative_prompt.lower()
+
+        self.assertNotIn("large group", lowered)
+        self.assertNotIn("chaotic crowd", lowered)
+        self.assertIn("watermark", lowered)
 
 
 if __name__ == "__main__":

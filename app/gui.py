@@ -17,6 +17,7 @@ from app.image_generator import ImageGenerator
 from app.logger import attach_gui_handler
 from app.manifest import RunManifestWriter
 from app.prompt_intelligence import resolve_prompt_plan
+from app.runtime_state import RuntimeResolver, build_export_payload
 from app.repo_updater import pull_current_branch
 from app.scanner import scan_docx_files
 from app.types import DocumentManifest
@@ -48,12 +49,17 @@ class AppGUI(ctk.CTk):
 
         self.gui_log_handler = attach_gui_handler(self.logger, self._enqueue_log)
         self.image_generator = ImageGenerator(config, logger)
+        self.runtime_resolver = RuntimeResolver(config)
         self.manifest_writer = RunManifestWriter(config.log_dir)
+        self.last_run_runtime = None
+        self.last_document_exports: list[dict[str, object]] = []
+        self.last_document_runtime_status = "doc_runtime=pendiente"
 
         self._build_ui()
         self.after(100, self._flush_logs)
         self._set_status("Listo")
         self._set_root_label(self.selected_root)
+        self._refresh_runtime_panel()
 
     def _build_ui(self) -> None:
         self.grid_columnconfigure(0, weight=1)
@@ -68,6 +74,9 @@ class AppGUI(ctk.CTk):
 
         self.root_label = ctk.CTkLabel(top_frame, text="Carpeta raíz: -")
         self.root_label.grid(row=0, column=0, padx=10, pady=8, sticky="w")
+
+        self.runtime_label = ctk.CTkLabel(top_frame, text="Runtime efectivo: -", justify="left")
+        self.runtime_label.grid(row=1, column=0, padx=10, pady=(0, 8), sticky="w")
 
         controls = ctk.CTkFrame(self)
         controls.grid(row=2, column=0, padx=12, pady=6, sticky="ew")
@@ -111,7 +120,7 @@ class AppGUI(ctk.CTk):
         self.option_images = ctk.CTkOptionMenu(
             controls,
             values=["1", "2"],
-            command=lambda value: self.num_images_var.set(int(value)),
+            command=self._on_images_per_doc_changed,
         )
         self.option_images.set(str(self.config.default_num_images))
         self.option_images.grid(row=1, column=1, padx=6, pady=6, sticky="w")
@@ -133,6 +142,7 @@ class AppGUI(ctk.CTk):
         )
         self.option_preset.set(self.config.default_preset)
         self.option_preset.grid(row=1, column=4, padx=6, pady=6, sticky="w")
+        self.option_preset.configure(command=self._on_preset_changed)
 
         ctk.CTkLabel(controls, text="Estrategia visual:").grid(row=1, column=5, padx=6, pady=6, sticky="e")
         self.option_strategy = ctk.CTkOptionMenu(
@@ -142,12 +152,14 @@ class AppGUI(ctk.CTk):
         )
         self.option_strategy.set("auto")
         self.option_strategy.grid(row=1, column=6, padx=6, pady=6, sticky="w")
+        self.option_strategy.configure(command=self._on_strategy_changed)
 
         ctk.CTkLabel(controls, text="Seed (vacío=aleatorio):").grid(
             row=2, column=0, padx=6, pady=6, sticky="e"
         )
         self.seed_entry = ctk.CTkEntry(controls, placeholder_text="Ej: 12345")
         self.seed_entry.grid(row=2, column=1, padx=6, pady=6, sticky="ew")
+        self.seed_entry.bind("<KeyRelease>", lambda _event: self._refresh_runtime_panel())
 
         self.progress = ctk.CTkProgressBar(self)
         self.progress.set(0)
@@ -168,6 +180,46 @@ class AppGUI(ctk.CTk):
             return int(raw)
         except ValueError:
             raise ValueError("Seed inválida. Debe ser un número entero o vacío.")
+
+    def _build_runtime_snapshot(self):
+        return self.runtime_resolver.resolve_run_runtime(
+            preset_name=self.preset_var.get(),
+            strategy_override=self.strategy_var.get(),
+            seed=self._parse_seed(),
+            images_per_document=self.num_images_var.get(),
+            backend_state=self.image_generator.get_backend_state(),
+        )
+
+    def _on_preset_changed(self, value: str) -> None:
+        self.preset_var.set(value)
+        self._refresh_runtime_panel()
+
+    def _on_images_per_doc_changed(self, value: str) -> None:
+        self.num_images_var.set(int(value))
+        self._refresh_runtime_panel()
+
+    def _on_strategy_changed(self, value: str) -> None:
+        self.strategy_var.set(value)
+        self._refresh_runtime_panel()
+
+    def _runtime_summary(self, runtime) -> str:
+        return (
+            f"Runtime efectivo | model={runtime.model_id.value} | pipeline={runtime.pipeline_class.value} | "
+            f"device={runtime.device.value}/{runtime.dtype.value} | preset={runtime.preset.value} -> "
+            f"{runtime.width.value}x{runtime.height.value} steps={runtime.steps.value} guidance={runtime.guidance_scale.value} | "
+            f"seed={runtime.seed.value} | strategy={runtime.strategy_override.value} | images/doc={runtime.images_per_document.value} | "
+            f"output={runtime.output_format.value} (jpg q={runtime.jpeg_quality.value} subsampling={runtime.jpeg_subsampling.value}) | "
+            f"openai={runtime.openai_enable.value} mode={runtime.openai_mode.value} | cuda_fallback={runtime.cuda_fallback_triggered.value}"
+            f" | {self.last_document_runtime_status}"
+        )
+
+    def _refresh_runtime_panel(self) -> None:
+        try:
+            runtime = self._build_runtime_snapshot()
+        except ValueError:
+            return
+        self.last_run_runtime = runtime
+        self.runtime_label.configure(text=self._runtime_summary(runtime))
 
     def _enqueue_log(self, msg: str) -> None:
         self._queue.put(msg)
@@ -255,6 +307,17 @@ class AppGUI(ctk.CTk):
                 selected_strategy = self.strategy_var.get()
                 preset = get_preset(selected_preset)
                 seed = self._parse_seed()
+                run_runtime = self.runtime_resolver.resolve_run_runtime(
+                    preset_name=selected_preset,
+                    strategy_override=selected_strategy,
+                    seed=seed,
+                    images_per_document=self.num_images_var.get(),
+                    backend_state=self.image_generator.get_backend_state(),
+                )
+                self.last_run_runtime = run_runtime
+                self.last_document_exports = []
+                self.last_document_runtime_status = "doc_runtime=pendiente"
+                self.after(0, self._refresh_runtime_panel)
 
                 config_snapshot = {
                     "model_id": self.config.model_id,
@@ -273,6 +336,7 @@ class AppGUI(ctk.CTk):
                     include_subfolders=self.include_subfolders_var.get(),
                     images_per_document=self.num_images_var.get(),
                     config_snapshot=config_snapshot,
+                    runtime_effective=run_runtime.to_dict(),
                 )
                 manifest_started = True
 
@@ -300,14 +364,8 @@ class AppGUI(ctk.CTk):
                 failed_docs: list[Path] = []
 
                 self.logger.info(
-                    "Inicio lote | preset=%s strategy=%s seed=%s size=%sx%s steps=%s guidance=%.2f",
-                    selected_preset,
-                    selected_strategy,
-                    seed if seed is not None else "aleatoria",
-                    preset.width,
-                    preset.height,
-                    preset.steps,
-                    preset.guidance_scale,
+                    "%s | defaults individuales DEFAULT_* quedan eclipsados por preset en GUI",
+                    self._runtime_summary(run_runtime),
                 )
 
                 for docx_path in self.docx_jobs:
@@ -331,6 +389,7 @@ class AppGUI(ctk.CTk):
                         semantic_validation_status=None,
                         final_positive_prompt=None,
                         final_negative_prompt=None,
+                        runtime_effective=run_runtime.to_dict(),
                     )
                     self.manifest_writer.add_document(document_manifest)
                     try:
@@ -368,6 +427,37 @@ class AppGUI(ctk.CTk):
                         document_manifest.semantic_validation_status = plan.semantic_validation_status
                         document_manifest.final_positive_prompt = " || ".join(plan.positive_prompts)
                         document_manifest.final_negative_prompt = plan.negative_prompt
+                        doc_runtime = self.runtime_resolver.resolve_document_runtime(
+                            run_runtime=run_runtime,
+                            strategy_effective=plan.strategy_effective,
+                            prompt_source=plan.source,
+                            openai_status=resolution.openai_status,
+                            fallback_reason=intelligence.fallback_reason,
+                        )
+                        document_manifest.runtime_effective = doc_runtime.to_dict()
+                        self.last_document_exports.append(
+                            {
+                                "document_path": str(docx_path),
+                                "prompt_source": plan.source,
+                                "openai_status": resolution.openai_status,
+                                "strategy_effective": plan.strategy_effective,
+                                "domain": plan.domain,
+                                "final_positive_prompt": " || ".join(plan.positive_prompts),
+                                "final_negative_prompt": plan.negative_prompt,
+                                "width": preset.width,
+                                "height": preset.height,
+                                "steps": preset.steps,
+                                "guidance_scale": preset.guidance_scale,
+                                "outputs": [],
+                                "runtime_effective": doc_runtime.to_dict(),
+                            }
+                        )
+                        doc_export_ref = self.last_document_exports[-1]
+                        self.last_document_runtime_status = (
+                            f"doc={docx_path.name} source={plan.source} openai_status={resolution.openai_status} "
+                            f"strategy_effective={plan.strategy_effective}"
+                        )
+                        self.after(0, self._refresh_runtime_panel)
                         for idx, prompt in enumerate(plan.positive_prompts, start=1):
                             output_path = self.image_generator.generate(
                                 docx_path=docx_path,
@@ -382,7 +472,46 @@ class AppGUI(ctk.CTk):
                                 preset_name=selected_preset,
                                 strategy_name=plan.strategy_effective,
                             )
-                            self.manifest_writer.append_output(document_manifest, idx, output_path)
+                            backend_state = self.image_generator.get_backend_state()
+                            run_runtime = self.runtime_resolver.resolve_run_runtime(
+                                preset_name=selected_preset,
+                                strategy_override=selected_strategy,
+                                seed=seed,
+                                images_per_document=self.num_images_var.get(),
+                                backend_state=backend_state,
+                            )
+                            self.last_run_runtime = run_runtime
+                            self.after(0, self._refresh_runtime_panel)
+                            generation_meta = self.image_generator.last_generation_metadata
+                            self.manifest_writer.append_output(
+                                document_manifest,
+                                idx,
+                                output_path,
+                                file_size_bytes=int(generation_meta.get("file_size_bytes", 0)),
+                                device_at_generation=str(generation_meta.get("device", backend_state.get("device", "cpu"))),
+                                dtype_at_generation=str(generation_meta.get("dtype", backend_state.get("dtype", "float32"))),
+                                cuda_fallback_triggered=bool(
+                                    generation_meta.get(
+                                        "cuda_fallback_triggered",
+                                        backend_state.get("cuda_fallback_triggered", False),
+                                    )
+                                ),
+                            )
+                            self.logger.info(
+                                "Output idx=%s | doc=%s | prompt_source=%s | strategy=%s | size_bytes=%s",
+                                idx,
+                                docx_path.name,
+                                plan.source,
+                                plan.strategy_effective,
+                                generation_meta.get("file_size_bytes", "n/a"),
+                            )
+                            doc_export_ref["outputs"].append(
+                                {
+                                    "image_index": idx,
+                                    "output_path": str(output_path),
+                                    "file_size_bytes": int(generation_meta.get("file_size_bytes", 0)),
+                                }
+                            )
                         succeeded_docs += 1
                         self.logger.info("Documento procesado: %s", docx_path)
                     except Exception as exc:  # noqa: BLE001
@@ -452,32 +581,15 @@ class AppGUI(ctk.CTk):
 
     def export_parameters(self) -> None:
         timestamp = datetime.now()
-        preset = get_preset(self.preset_var.get())
-        runtime = self.image_generator.get_runtime_parameters(
-            width=preset.width,
-            height=preset.height,
-            steps=preset.steps,
-            guidance_scale=preset.guidance_scale,
-            seed=self._parse_seed(),
+        runtime = self._build_runtime_snapshot()
+        data = build_export_payload(
+            runtime=runtime,
+            selected_root_folder=str(self.selected_root),
+            per_document=self.last_document_exports,
+            torch_version=torch.__version__,
+            diffusers_version=diffusers.__version__,
+            generated_at=timestamp.isoformat(timespec="seconds"),
         )
-        data = {
-            "timestamp": timestamp.isoformat(timespec="seconds"),
-            "model_id": runtime["model_id"],
-            "device": runtime["device"],
-            "force_cpu": runtime["force_cpu"],
-            "preset": self.preset_var.get(),
-            "strategy_override": self.strategy_var.get(),
-            "seed": runtime["seed"],
-            "width": runtime["width"],
-            "height": runtime["height"],
-            "steps": runtime["steps"],
-            "guidance_scale": runtime["guidance_scale"],
-            "negative_prompt": runtime["negative_prompt"],
-            "torch_version": torch.__version__,
-            "diffusers_version": diffusers.__version__,
-            "selected_root_folder": str(self.selected_root),
-            "images_per_document": self.num_images_var.get(),
-        }
 
         self.config.log_dir.mkdir(parents=True, exist_ok=True)
         file_path = self.config.log_dir / f"run_config_{timestamp.strftime('%Y-%m-%d_%H-%M-%S')}.json"

@@ -169,6 +169,8 @@ class OpenAIPromptAssistant:
             "You are a prompt-intelligence assistant for local SDXL editorial rendering. "
             "Return strict JSON only. No markdown. "
             "Return concrete render-ready scene fields, not editorial prose. "
+            "Prefer photojournalistic and professional news photography cues over abstract style adjectives. "
+            "Describe visible action, approximate group size, concrete place and framing. "
             "Prefer one main subject plus supporting context, realistic action, and physically plausible staging. "
             "Avoid exact likeness claims for real people and avoid overloaded scenes with many leaders/flags/symbols. "
             "For political or diplomatic topics, prefer robust compositions such as official delegation meeting, "
@@ -187,6 +189,8 @@ class OpenAIPromptAssistant:
             "visual_strategy must be one of: editorial_photo, conceptual, infographic_like, "
             "industrial, institutional, documentary_wide. "
             "human_closeup_risk in range 0..10 and confidence in range 0..1. "
+            "Use concise visual phrasing suitable for diffusion models: photojournalistic photograph, "
+            "professional news photography, documentary style, natural lighting, medium-wide framing when appropriate. "
             "Avoid abstract political language and avoid impossible crowd complexity. "
             f"Document context:\n{context}"
         )

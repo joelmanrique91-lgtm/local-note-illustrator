@@ -15,6 +15,7 @@ class ManifestTests(unittest.TestCase):
             log_dir = Path(tmp)
             writer = RunManifestWriter(log_dir)
             run = writer.start(Path("/tmp/docs"), True, 1, {"model_id": "x"})
+            run.runtime_effective = {"device": {"value": "cuda", "source": "runtime"}}
             doc = DocumentManifest(
                 document_path="/tmp/docs/a.docx",
                 source="openai",
@@ -35,9 +36,18 @@ class ManifestTests(unittest.TestCase):
                 semantic_validation_status="simplified",
                 final_positive_prompt="official delegation meeting, conference room",
                 final_negative_prompt="blurry, low quality",
+                runtime_effective={"prompt_source": {"value": "openai", "source": "runtime"}},
             )
             writer.add_document(doc)
-            writer.append_output(doc, 1, Path("/tmp/docs/a_img_01.jpg"))
+            writer.append_output(
+                doc,
+                1,
+                Path("/tmp/docs/a_img_01.jpg"),
+                file_size_bytes=12345,
+                device_at_generation="cuda",
+                dtype_at_generation="float16",
+                cuda_fallback_triggered=False,
+            )
             path = writer.finish("success")
 
             payload = json.loads(path.read_text(encoding="utf-8"))
@@ -46,6 +56,8 @@ class ManifestTests(unittest.TestCase):
             self.assertEqual(payload["documents"][0]["source"], "openai")
             self.assertIn("official delegation meeting", payload["documents"][0]["final_positive_prompt"])
             self.assertEqual(payload["documents"][0]["final_negative_prompt"], "blurry, low quality")
+            self.assertEqual(payload["runtime_effective"]["device"]["value"], "cuda")
+            self.assertEqual(payload["documents"][0]["outputs"][0]["file_size_bytes"], 12345)
 
 
 if __name__ == "__main__":

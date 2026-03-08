@@ -31,6 +31,9 @@ def build_config() -> AppConfig:
         openai_prompt_intelligence_mode="required_with_safety_fallback",
         openai_max_input_chars=8000,
         openai_strict_schema=True,
+        jpeg_quality=90,
+        jpeg_subsampling=0,
+        value_sources={},
     )
 
 
