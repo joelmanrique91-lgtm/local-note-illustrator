@@ -131,6 +131,40 @@ class PromptBuilderRenderFirstTests(unittest.TestCase):
         self.assertEqual(len(plan.positive_prompts), 1)
         self.assertTrue(plan.positive_prompts[0])
 
+    def test_political_prompt_gets_photojournalistic_visual_cues(self) -> None:
+        intelligence = self._intelligence(
+            domain="political_institutional",
+            visual_strategy="institutional",
+            prompt_main="government delegation arrives at conference room, handshake near podium",
+            composition_notes="press photographers at room entrance, medium-wide scene",
+            style_notes="plausible, authentic, realistic",
+        )
+
+        plan = compose_prompt_plan(intelligence, base_negative_prompt="blurry", variants=1)
+        prompt = plan.positive_prompts[0].lower()
+
+        self.assertIn("photojournalistic photograph", prompt)
+        self.assertIn("institutional press photography", prompt)
+        self.assertIn("conference or summit setting", prompt)
+        self.assertNotIn("plausible", prompt)
+        self.assertNotIn("authentic", prompt)
+
+    def test_prompt_remains_compact_and_natural(self) -> None:
+        intelligence = self._intelligence(
+            domain="economy_markets",
+            visual_strategy="infographic_like",
+            prompt_main="market analysts reviewing screens in financial newsroom, traders reacting to index movement",
+            composition_notes="data screens visible, medium shot",
+            style_notes="professional news photography, realistic",
+        )
+
+        plan = compose_prompt_plan(intelligence, base_negative_prompt="blurry", variants=1)
+        prompt = plan.positive_prompts[0]
+
+        self.assertLessEqual(len(prompt), PROMPT_MAX_CHARS)
+        self.assertNotIn("{", prompt)
+        self.assertNotIn("[", prompt)
+
 
 if __name__ == "__main__":
     unittest.main()

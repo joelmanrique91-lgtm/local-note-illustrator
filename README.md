@@ -107,6 +107,8 @@ copy .env.example .env
 - `DEFAULT_WIDTH`
 - `DEFAULT_HEIGHT`
 - `OUTPUT_FORMAT`
+- `JPEG_QUALITY` (default: `90`)
+- `JPEG_SUBSAMPLING` (default: `0`)
 - `LOG_DIR`
 - `FORCE_CPU` (usar `true` para desactivar CUDA manualmente)
 - `OPENAI_ENABLE`
@@ -176,6 +178,12 @@ La GUI ahora incluye selector de preset:
 
 Cada preset define steps, guidance y tamaño por defecto.
 
+### Fuente de verdad operativa en GUI
+
+- La resolución efectiva de `width`, `height`, `steps` y `guidance_scale` en una corrida GUI se toma del **preset seleccionado**.
+- Los `DEFAULT_*` individuales del `.env` quedan como configuración base, pero en ejecución de GUI manda el preset activo.
+- La app usa una resolución central de runtime efectivo (valor + origen) para panel GUI, logs, export y manifest.
+
 ## Estrategia visual
 
 La GUI ahora permite:
@@ -196,6 +204,14 @@ Además podés definir `seed` manual; si queda vacío se usa seed aleatoria.
 - Flujo operativo actual: **OpenAI-first** para inteligencia de prompt, con fallback local seguro si hay timeout, red, auth/config o schema inválido.
 - El render final sigue siendo **100% local con SDXL**.
 - Fuente efectiva por documento (`openai` o `local_fallback`) queda registrada en logs y en `run_manifest_<run_id>.json`.
+
+### Política explícita de `OPENAI_PROMPT_INTELLIGENCE_MODE`
+
+- `disabled`: no consulta OpenAI, usa flujo local.
+- `required_with_safety_fallback`: OpenAI-first con fallback local en errores recuperables (config/red/timeout/auth/schema/error inesperado).
+- `required_strict`: OpenAI obligatorio. Ante errores de config/red/timeout/auth/schema/error inesperado, **no hay fallback local** y el documento falla.
+
+En `required_strict`, `OPENAI_ENABLE` debe estar en `true`.
 
 ## Chequeo de entorno local
 

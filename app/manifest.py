@@ -21,6 +21,7 @@ class RunManifestWriter:
         include_subfolders: bool,
         images_per_document: int,
         config_snapshot: dict[str, object],
+        runtime_effective: dict[str, object] | None = None,
     ) -> RunManifest:
         manifest = RunManifest.create(
             selected_root_folder=selected_root_folder,
@@ -28,6 +29,7 @@ class RunManifestWriter:
             images_per_document=images_per_document,
             config_snapshot=config_snapshot,
         )
+        manifest.runtime_effective = runtime_effective
         self.run_manifest = manifest
         self.file_path = self.log_dir / f"run_manifest_{manifest.run_id}.json"
         self._persist()
@@ -39,8 +41,26 @@ class RunManifestWriter:
         self.run_manifest.documents.append(document)
         self._persist()
 
-    def append_output(self, document: DocumentManifest, image_index: int, output_path: Path) -> None:
-        document.outputs.append(ImageManifest(image_index=image_index, output_path=str(output_path)))
+    def append_output(
+        self,
+        document: DocumentManifest,
+        image_index: int,
+        output_path: Path,
+        file_size_bytes: int | None = None,
+        device_at_generation: str | None = None,
+        dtype_at_generation: str | None = None,
+        cuda_fallback_triggered: bool | None = None,
+    ) -> None:
+        document.outputs.append(
+            ImageManifest(
+                image_index=image_index,
+                output_path=str(output_path),
+                file_size_bytes=file_size_bytes,
+                device_at_generation=device_at_generation,
+                dtype_at_generation=dtype_at_generation,
+                cuda_fallback_triggered=cuda_fallback_triggered,
+            )
+        )
         self._persist()
 
     def mark_document_error(self, document: DocumentManifest, error: str) -> None:
@@ -61,4 +81,3 @@ class RunManifestWriter:
         payload = asdict(self.run_manifest)
         with self.file_path.open("w", encoding="utf-8") as handle:
             json.dump(payload, handle, ensure_ascii=False, indent=2)
-

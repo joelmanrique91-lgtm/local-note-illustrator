@@ -136,6 +136,23 @@ class _NoLogger:
 none_logger = _NoLogger()
 
 
+STRICT_ABORT_ERRORS = {
+    "config",
+    "timeout",
+    "network",
+    "auth",
+    "schema_invalid",
+    "unexpected",
+}
+
+
+def should_fallback_to_local(mode: str, error: Exception) -> bool:
+    if mode == "required_strict":
+        error_type = getattr(error, "error_type", "unexpected")
+        return error_type not in STRICT_ABORT_ERRORS
+    return True
+
+
 def resolve_prompt_plan(
     text: str,
     strategy_override: str,
@@ -144,6 +161,9 @@ def resolve_prompt_plan(
     variants: int,
 ) -> PromptResolution:
     mode = config.openai_prompt_intelligence_mode
+
+    if mode == "required_strict" and not config.openai_enable:
+        raise LlmAssistantConfigError("required_strict exige OPENAI_ENABLE=true")
 
     if not config.openai_enable or mode == "disabled":
         logger.info("Prompt intelligence local: OPENAI deshabilitado o modo disabled")
@@ -169,7 +189,7 @@ def resolve_prompt_plan(
         return PromptResolution(intelligence=intelligence, prompt_plan=plan, openai_status="success")
     except LlmAssistantConfigError as exc:
         logger.warning("OpenAI config issue, fallback local: %s", exc)
-        if mode == "required_strict":
+        if not should_fallback_to_local(mode, exc):
             raise
         return _resolve_local_fallback(
             text=text,
@@ -180,6 +200,8 @@ def resolve_prompt_plan(
         )
     except LlmAssistantTimeoutError as exc:
         logger.warning("OpenAI timeout, fallback local: %s", exc)
+        if not should_fallback_to_local(mode, exc):
+            raise
         return _resolve_local_fallback(
             text=text,
             strategy_override=strategy_override,
@@ -189,6 +211,8 @@ def resolve_prompt_plan(
         )
     except LlmAssistantNetworkError as exc:
         logger.warning("OpenAI network, fallback local: %s", exc)
+        if not should_fallback_to_local(mode, exc):
+            raise
         return _resolve_local_fallback(
             text=text,
             strategy_override=strategy_override,
@@ -198,7 +222,7 @@ def resolve_prompt_plan(
         )
     except LlmAssistantAuthError as exc:
         logger.warning("OpenAI auth, fallback local: %s", exc)
-        if mode == "required_strict":
+        if not should_fallback_to_local(mode, exc):
             raise
         return _resolve_local_fallback(
             text=text,
@@ -209,6 +233,8 @@ def resolve_prompt_plan(
         )
     except LlmAssistantSchemaError as exc:
         logger.warning("OpenAI schema invalid, fallback local: %s", exc)
+        if not should_fallback_to_local(mode, exc):
+            raise
         return _resolve_local_fallback(
             text=text,
             strategy_override=strategy_override,
@@ -218,6 +244,8 @@ def resolve_prompt_plan(
         )
     except LlmAssistantError as exc:
         logger.warning("OpenAI generic error, fallback local: %s", exc)
+        if not should_fallback_to_local(mode, exc):
+            raise
         return _resolve_local_fallback(
             text=text,
             strategy_override=strategy_override,

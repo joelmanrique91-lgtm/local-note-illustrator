@@ -46,6 +46,10 @@ class PromptPlan:
 class ImageManifest:
     image_index: int
     output_path: str
+    file_size_bytes: Optional[int] = None
+    device_at_generation: Optional[str] = None
+    dtype_at_generation: Optional[str] = None
+    cuda_fallback_triggered: Optional[bool] = None
 
 
 @dataclass
@@ -73,6 +77,7 @@ class DocumentManifest:
     semantic_validation_status: Optional[str] = None
     final_positive_prompt: Optional[str] = None
     final_negative_prompt: Optional[str] = None
+    runtime_effective: Optional[dict[str, object]] = None
 
 
 @dataclass
@@ -85,6 +90,7 @@ class RunManifest:
     include_subfolders: bool
     images_per_document: int
     config_snapshot: dict[str, object]
+    runtime_effective: Optional[dict[str, object]] = None
     documents: list[DocumentManifest] = field(default_factory=list)
 
     @classmethod

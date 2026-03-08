@@ -59,12 +59,12 @@ JUNK_KEYWORDS = {
 TAG_PREFIXES = ("tags:", "tag:", "etiquetas:")
 
 VISUAL_STRATEGY_DIRECTIVES = {
-    "editorial_photo": "editorial documentary photo, medium-wide framing, context before portrait, natural color grading",
-    "conceptual": "clean conceptual editorial visual, symbolic composition, no close portraits, calm neutral palette",
-    "infographic_like": "editorial infographic-like composition, data-driven visual language, screens, charts and institutional context",
-    "industrial": "industrial editorial wide shot, operational infrastructure and machinery, no close human portrait",
-    "institutional": "institutional press coverage, podium or meeting room, medium or wide shot, formal documentary look",
-    "documentary_wide": "documentary wide scene, environmental context first, no close-up faces, realistic reportage",
+    "editorial_photo": "photojournalistic photograph, professional news photography, medium-wide framing, visible action and contextual background, natural lighting",
+    "conceptual": "editorial conceptual scene with concrete objects, clear foreground subject, clean composition, natural light behavior",
+    "infographic_like": "newsroom-style data scene, screens or charts visible in context, clean composition, wide framing",
+    "industrial": "industrial field report photography, operational machinery and workers in context, wide shot, natural light",
+    "institutional": "institutional press photography, conference room or podium context, medium-wide framing, documentary tone",
+    "documentary_wide": "on-location documentary news photograph, environmental context first, medium-wide to wide framing, press coverage look",
 }
 
 SPORTS_EDITORIAL_POSITIVE_GUARDRAILS = [
@@ -87,17 +87,9 @@ SPORTS_EDITORIAL_NEGATIVE_TERMS = [
     "collage of club symbols",
 ]
 
-NEGATIVE_GROUPS = {
-    "anatomy": "deformed anatomy, malformed body, broken proportions, extra limbs",
-    "hands_face": "deformed hands, extra fingers, duplicate face, asymmetrical eyes, crossed eyes",
-    "artificial_look": "plastic skin, uncanny valley, oversaturated colors, fake cinematic glow, artificial render",
-    "composition_noise": "chaotic crowd, extreme close-up portrait, cropped face, warped perspective",
-    "artifacts": "blurry, low quality, jpeg artifacts, unreadable text, watermark, logo",
-    "sports_editorial": ", ".join(SPORTS_EDITORIAL_NEGATIVE_TERMS),
-}
-
-BASE_NEGATIVE_TERMS = [
+UNIVERSAL_STRUCTURAL_NEGATIVE_TERMS = [
     "blurry",
+    "blurry details",
     "low quality",
     "jpeg artifacts",
     "unreadable text",
@@ -112,15 +104,24 @@ BASE_NEGATIVE_TERMS = [
     "duplicate face",
     "asymmetrical eyes",
     "crossed eyes",
+    "plastic skin",
+    "uncanny",
 ]
+
+# Backwards-compatible alias used by tests and existing call sites.
+BASE_NEGATIVE_TERMS = UNIVERSAL_STRUCTURAL_NEGATIVE_TERMS
 
 DOMAIN_NEGATIVE_TERMS = {
     "sports_transfers": SPORTS_EDITORIAL_NEGATIVE_TERMS,
+    "political_institutional": ["warped perspective", "poster layout"],
+    "economy_markets": ["poster layout"],
+    "conflict_disaster_crisis": ["poster layout"],
 }
 
 STRATEGY_NEGATIVE_TERMS = {
     "editorial_photo": ["poster layout"],
     "documentary_wide": ["poster layout", "extreme close-up portrait"],
+    "institutional": ["extreme close-up portrait"],
 }
 
 NEGATIVE_CANONICAL_ALIASES = {
@@ -129,6 +130,29 @@ NEGATIVE_CANONICAL_ALIASES = {
     "low-quality": "low quality",
     "extra limb": "extra limbs",
     "extra finger": "extra fingers",
+    "large groups": "large group",
+    "crowded scenes": "crowded scene",
+}
+
+GROUP_SCENE_TERMS = {
+    "crowd",
+    "multitud",
+    "group",
+    "team",
+    "delegation",
+    "delegates",
+    "summit",
+    "conference",
+    "press room",
+    "stadium",
+}
+
+CONTRADICTORY_GROUP_NEGATIVES = {
+    "chaotic crowd",
+    "crowded scene",
+    "crowded scenes",
+    "large group",
+    "large groups",
 }
 
 NEGATIVE_CONFLICT_RULES = {
@@ -137,8 +161,20 @@ NEGATIVE_CONFLICT_RULES = {
         "blocked": {"infographic", "infographic board"},
     },
     "crowd_scene": {
-        "triggers": {"crowd", "multitud", "team", "group"},
-        "blocked": {"chaotic crowd"},
+        "triggers": GROUP_SCENE_TERMS,
+        "blocked": CONTRADICTORY_GROUP_NEGATIVES,
+    },
+    "institutional_group_scene": {
+        "triggers": {"summit", "conference", "delegation", "delegates", "press briefing"},
+        "blocked": {"extreme close-up portrait"},
+    },
+    "sports_scene": {
+        "triggers": {"stadium", "training ground", "team", "match", "signing"},
+        "blocked": CONTRADICTORY_GROUP_NEGATIVES,
+    },
+    "disaster_scene": {
+        "triggers": {"evacuation", "rescue", "crisis", "disaster", "emergency response"},
+        "blocked": CONTRADICTORY_GROUP_NEGATIVES,
     },
 }
 
@@ -154,6 +190,44 @@ ABSTRACT_NOTE_PATTERNS = (
     "safe diffusion composition",
     "balanced editorial framing",
 )
+
+WEAK_META_PATTERNS = (
+    "plausible",
+    "authentic",
+    "realistic",
+    "cinematic",
+    "epic",
+)
+
+DOMAIN_VISUAL_CUES = {
+    "political_institutional": [
+        "photojournalistic photograph",
+        "institutional press photography",
+        "conference or summit setting",
+        "medium-wide framing",
+    ],
+    "economy_markets": [
+        "professional news photography",
+        "financial newsroom or trading floor context",
+        "visible data screens or market indicators",
+    ],
+    "conflict_disaster_crisis": [
+        "on-location field reporting",
+        "documentary news photograph",
+        "wide environmental context",
+    ],
+    "sports_transfers": [
+        "realistic sports editorial coverage",
+        "professional sports news photography",
+        "training ground or stadium context",
+    ],
+}
+
+STRATEGY_VISUAL_CUES = {
+    "editorial_photo": ["photojournalistic photograph", "press photography look"],
+    "institutional": ["institutional press photography", "formal documentary framing"],
+    "documentary_wide": ["documentary news photograph", "wide environmental framing"],
+}
 
 
 @dataclass
@@ -249,6 +323,14 @@ def _extract_keywords(text: str, n: int = 8) -> list[str]:
     return [token for token, _ in freqs.most_common(n)]
 
 
+def _trim_text(text: str, max_len: int = 90) -> str:
+    normalized = _normalize_text(text)
+    if len(normalized) <= max_len:
+        return normalized
+    cut = normalized[:max_len].rsplit(" ", 1)[0].strip()
+    return cut or normalized[:max_len]
+
+
 def _canonical_negative_term(term: str) -> str:
     normalized = re.sub(r"\s+", " ", term.lower().strip(" ,.;:-"))
     return NEGATIVE_CANONICAL_ALIASES.get(normalized, normalized)
@@ -288,8 +370,11 @@ def _negative_conflict_blocklist(domain: str, visual_strategy: str, positive_tex
 
     if visual_strategy == "infographic_like":
         blocked.update(NEGATIVE_CONFLICT_RULES["infographic_mode"]["blocked"])
-    if domain == "sports_transfers" and "crowd" in lowered:
-        blocked.update(NEGATIVE_CONFLICT_RULES["crowd_scene"]["blocked"])
+    if domain in {"political_institutional", "economy_markets", "conflict_disaster_crisis", "sports_transfers"}:
+        if any(trigger in lowered for trigger in GROUP_SCENE_TERMS):
+            blocked.update(CONTRADICTORY_GROUP_NEGATIVES)
+    if domain == "political_institutional":
+        blocked.update(NEGATIVE_CONFLICT_RULES["institutional_group_scene"]["blocked"])
 
     return {_canonical_negative_term(term) for term in blocked}
 
@@ -306,6 +391,18 @@ def _filter_conflicting_negative_terms(
     return [term for term in terms if _canonical_negative_term(term) not in blocked]
 
 
+def _universal_negative_terms() -> list[str]:
+    return list(UNIVERSAL_STRUCTURAL_NEGATIVE_TERMS)
+
+
+def _strategy_negative_terms(visual_strategy: str) -> list[str]:
+    return list(STRATEGY_NEGATIVE_TERMS.get(visual_strategy, []))
+
+
+def _domain_negative_terms(domain: str) -> list[str]:
+    return list(DOMAIN_NEGATIVE_TERMS.get(domain, []))
+
+
 def compose_negative_prompt(
     base_negative: str,
     extra_negative: str = "",
@@ -313,12 +410,14 @@ def compose_negative_prompt(
     visual_strategy: str = "",
     positive_context: str = "",
 ) -> str:
-    domain_terms = DOMAIN_NEGATIVE_TERMS.get(domain, [])
-    strategy_terms = STRATEGY_NEGATIVE_TERMS.get(visual_strategy, [])
+    domain_terms = _domain_negative_terms(domain)
+    strategy_terms = _strategy_negative_terms(visual_strategy)
+    universal_terms = _universal_negative_terms()
+
     terms = _dedupe_negative_terms(
         extra_negative.strip(),
         base_negative.strip(),
-        terms=[*BASE_NEGATIVE_TERMS, *domain_terms, *strategy_terms],
+        terms=[*universal_terms, *strategy_terms, *domain_terms],
     )
     filtered = _filter_conflicting_negative_terms(
         terms,
@@ -339,6 +438,16 @@ def _is_abstract_segment(segment: str) -> bool:
     return any(pattern in lowered for pattern in ABSTRACT_NOTE_PATTERNS)
 
 
+def _is_weak_meta_segment(segment: str) -> bool:
+    lowered = _normalize_text(segment).lower()
+    if not lowered:
+        return True
+    if lowered in WEAK_META_PATTERNS:
+        return True
+    words = lowered.split()
+    return len(words) <= 3 and all(word in WEAK_META_PATTERNS for word in words)
+
+
 def _sanitize_note_segments(text: str) -> list[str]:
     clean: list[str] = []
     seen: set[str] = set()
@@ -348,9 +457,24 @@ def _sanitize_note_segments(text: str) -> list[str]:
             continue
         if _is_abstract_segment(segment):
             continue
+        if _is_weak_meta_segment(segment):
+            continue
         seen.add(key)
         clean.append(segment)
     return clean
+
+
+def _build_visual_cues(domain: str, visual_strategy: str) -> list[str]:
+    cues = [*DOMAIN_VISUAL_CUES.get(domain, []), *STRATEGY_VISUAL_CUES.get(visual_strategy, [])]
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for cue in cues:
+        key = cue.lower().strip()
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(cue)
+    return deduped[:4]
 
 
 def _segment_concrete_score(segment: str) -> int:
@@ -400,10 +524,15 @@ def _compose_render_first_prompt(
     style_notes: str,
     avoid_close_ups: bool,
     domain: str,
+    visual_strategy: str,
     max_chars: int = PROMPT_MAX_CHARS,
 ) -> str:
     main_segments_raw = _split_segments(prompt_main)
-    main_segments = [segment for segment in main_segments_raw if not _is_abstract_segment(segment)]
+    main_segments = [
+        segment
+        for segment in main_segments_raw
+        if not _is_abstract_segment(segment) and not _is_weak_meta_segment(segment)
+    ]
     if not main_segments:
         main_segments = ["editorial documentary scene"]
 
@@ -414,18 +543,23 @@ def _compose_render_first_prompt(
     style_segments = _sanitize_note_segments(style_notes)
 
     style = ", ".join(style_segments[:2]) if style_segments else ""
-    guardrails = ["natural proportions", "realistic visual details"]
+    guardrails = ["coherent anatomy", "natural skin texture", "physically coherent scene"]
     if avoid_close_ups:
         guardrails.insert(0, "medium or wide framing")
 
+    visual_cues = _build_visual_cues(domain, visual_strategy)
+
     sports_priority: list[str] = []
     if domain == "sports_transfers":
-        sports_priority = [SPORTS_EDITORIAL_POSITIVE_GUARDRAILS[0]]
-        guardrails.extend(SPORTS_EDITORIAL_POSITIVE_GUARDRAILS[1:])
+        sports_priority = [
+            SPORTS_EDITORIAL_POSITIVE_GUARDRAILS[0],
+            SPORTS_EDITORIAL_POSITIVE_GUARDRAILS[5],
+        ]
+        guardrails.extend(SPORTS_EDITORIAL_POSITIVE_GUARDRAILS[1:5])
 
     result_parts: list[str] = []
 
-    for block in [*semantic_core, *sports_priority, *remaining_main, *composition_segments]:
+    for block in [*visual_cues, *semantic_core, *sports_priority, *remaining_main, *composition_segments]:
         if not _append_with_budget(result_parts, block, max_chars):
             remaining = max_chars - len(", ".join(result_parts)) - 2
             if remaining > 20:
@@ -452,21 +586,23 @@ def _build_prompt_from_strategy(sections: ArticleSections, profile: StrategyProf
 
     anti_deformation_clauses = [
         "avoid close-up portraits",
-        "avoid visible distorted hands",
-        "prioritize coherent proportions",
-        "credible editorial realism",
+        "hands and body proportions coherent",
+        "clear foreground subject and readable context",
+        "natural light behavior",
     ]
     if profile.avoid_close_ups:
         anti_deformation_clauses.append("faces in medium or wide shot only")
 
+    title_focus = _trim_text(sections.title, max_len=72)
+
     return ", ".join(
         [
-            f"news scene about {sections.title}",
+            f"news scene about {title_focus}",
             f"domain focus: {profile.domain}",
             f"context terms: {context}",
             strategy_directive,
             ", ".join(anti_deformation_clauses),
-            "natural lighting, documentary style, realistic composition",
+            "documentary press coverage, visible action, medium-wide frame",
         ]
     )
 
@@ -536,6 +672,7 @@ def compose_prompt_plan(
             style_notes=intelligence.style_notes,
             avoid_close_ups=intelligence.avoid_close_ups,
             domain=intelligence.domain,
+            visual_strategy=intelligence.visual_strategy,
         )
         for prompt in positives
     ]

@@ -33,6 +33,9 @@ def build_config() -> AppConfig:
         openai_prompt_intelligence_mode="required_with_safety_fallback",
         openai_max_input_chars=8000,
         openai_strict_schema=True,
+        jpeg_quality=90,
+        jpeg_subsampling=0,
+        value_sources={},
     )
 
 
@@ -185,6 +188,46 @@ class PromptIntelligenceTests(unittest.TestCase):
         self.assertEqual(plan.domain, "sports_transfers")
         self.assertIn("realistic sports editorial coverage", plan.positive_prompts[0])
         self.assertIn("badge", plan.negative_prompt)
+
+    def test_required_strict_raises_on_timeout(self) -> None:
+        from app.llm_assistant import LlmAssistantTimeoutError
+
+        self.config = self.config.__class__(
+            **{**self.config.__dict__, "openai_prompt_intelligence_mode": "required_strict"}
+        )
+
+        with patch(
+            "app.prompt_intelligence.OpenAIPromptAssistant.generate_prompt_intelligence",
+            side_effect=LlmAssistantTimeoutError("timeout"),
+        ):
+            with self.assertRaises(LlmAssistantTimeoutError):
+                resolve_prompt_plan(
+                    text="Documento cualquiera",
+                    strategy_override="auto",
+                    config=self.config,
+                    logger=self.logger,
+                    variants=1,
+                )
+
+    def test_required_strict_requires_openai_enabled(self) -> None:
+        from app.llm_assistant import LlmAssistantConfigError
+
+        self.config = self.config.__class__(
+            **{
+                **self.config.__dict__,
+                "openai_prompt_intelligence_mode": "required_strict",
+                "openai_enable": False,
+            }
+        )
+
+        with self.assertRaises(LlmAssistantConfigError):
+            resolve_prompt_plan(
+                text="Documento cualquiera",
+                strategy_override="auto",
+                config=self.config,
+                logger=self.logger,
+                variants=1,
+            )
 
 
 if __name__ == "__main__":

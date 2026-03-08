@@ -65,6 +65,9 @@ class AppConfig:
     openai_prompt_intelligence_mode: str
     openai_max_input_chars: int
     openai_strict_schema: bool
+    jpeg_quality: int
+    jpeg_subsampling: int
+    value_sources: dict[str, str]
 
 
 def _env_int(name: str, default: int) -> int:
@@ -106,6 +109,9 @@ def get_preset(name: str) -> InferencePreset:
 def load_config() -> AppConfig:
     load_dotenv(override=False)
 
+    def _source(name: str) -> str:
+        return "env" if os.getenv(name) is not None else "default"
+
     output_format = os.getenv("OUTPUT_FORMAT", "jpg").lower()
     if output_format not in {"png", "jpg", "jpeg"}:
         output_format = "jpg"
@@ -126,6 +132,33 @@ def load_config() -> AppConfig:
         "OPENAI_PROMPT_INTELLIGENCE_MODE", "required_with_safety_fallback"
     ).strip()
     openai_max_input_chars = max(1000, _env_int("OPENAI_MAX_INPUT_CHARS", 8000))
+    jpeg_quality = max(1, min(_env_int("JPEG_QUALITY", 90), 100))
+    jpeg_subsampling = max(0, min(_env_int("JPEG_SUBSAMPLING", 0), 2))
+
+    value_sources = {
+        "model_id": _source("MODEL_ID"),
+        "default_negative_prompt": _source("DEFAULT_NEGATIVE_PROMPT"),
+        "default_num_images": _source("DEFAULT_NUM_IMAGES"),
+        "default_steps": _source("DEFAULT_STEPS"),
+        "default_guidance_scale": _source("DEFAULT_GUIDANCE_SCALE"),
+        "default_width": _source("DEFAULT_WIDTH"),
+        "default_height": _source("DEFAULT_HEIGHT"),
+        "output_format": _source("OUTPUT_FORMAT"),
+        "log_dir": _source("LOG_DIR"),
+        "app_log_file": _source("APP_LOG_FILE"),
+        "force_cpu": _source("FORCE_CPU"),
+        "default_preset": _source("DEFAULT_PRESET"),
+        "openai_enable": _source("OPENAI_ENABLE"),
+        "openai_api_key": _source("OPENAI_API_KEY"),
+        "openai_model": _source("OPENAI_MODEL"),
+        "openai_timeout_seconds": _source("OPENAI_TIMEOUT_SECONDS"),
+        "openai_max_retries": _source("OPENAI_MAX_RETRIES"),
+        "openai_prompt_intelligence_mode": _source("OPENAI_PROMPT_INTELLIGENCE_MODE"),
+        "openai_max_input_chars": _source("OPENAI_MAX_INPUT_CHARS"),
+        "openai_strict_schema": _source("OPENAI_STRICT_SCHEMA"),
+        "jpeg_quality": _source("JPEG_QUALITY"),
+        "jpeg_subsampling": _source("JPEG_SUBSAMPLING"),
+    }
 
     return AppConfig(
         model_id=os.getenv("MODEL_ID", "stabilityai/stable-diffusion-xl-base-1.0"),
@@ -154,4 +187,7 @@ def load_config() -> AppConfig:
         openai_prompt_intelligence_mode=openai_mode,
         openai_max_input_chars=openai_max_input_chars,
         openai_strict_schema=_env_bool("OPENAI_STRICT_SCHEMA", True),
+        jpeg_quality=jpeg_quality,
+        jpeg_subsampling=jpeg_subsampling,
+        value_sources=value_sources,
     )

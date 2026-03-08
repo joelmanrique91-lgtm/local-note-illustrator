@@ -27,6 +27,9 @@ class ImageGenerator:
         self.pipeline: Optional[StableDiffusionXLPipeline] = None
         self.device = "cpu"
         self.dtype = torch.float32
+        self.cuda_fallback_triggered = False
+        self.pipeline_class = StableDiffusionXLPipeline.__name__
+        self.last_generation_metadata: dict[str, object] = {}
         self._choose_initial_device()
 
     def _is_cuda_related_error(self, exc: Exception) -> bool:
@@ -69,6 +72,7 @@ class ImageGenerator:
             self.device = "cpu"
             self.dtype = torch.float32
             self.logger.warning("CUDA no usable; fallback a CPU. Motivo: %s", exc)
+            self.cuda_fallback_triggered = True
 
     def _reset_pipeline(self) -> None:
         self.pipeline = None
@@ -113,6 +117,7 @@ class ImageGenerator:
                 self._reset_pipeline()
                 self.device = "cpu"
                 self.dtype = torch.float32
+                self.cuda_fallback_triggered = True
                 self.pipeline = self._initialize_pipeline_on_device("cpu")
                 self.logger.info("Pipeline final en dispositivo: cpu")
             else:
@@ -274,6 +279,7 @@ class ImageGenerator:
                 self._reset_pipeline()
                 self.device = "cpu"
                 self.dtype = torch.float32
+                self.cuda_fallback_triggered = True
                 self.pipeline = self._initialize_pipeline_on_device("cpu")
                 result = self._run_generation(
                     positive_prompt=positive_prompt,
@@ -291,9 +297,35 @@ class ImageGenerator:
         output_path = self._next_output_path(docx_path, image_index, self.config.output_format)
         if self.config.output_format in {"jpg", "jpeg"}:
             image = image.convert("RGB")
-            image.save(output_path, format="JPEG", quality=90, subsampling=0)
+            image.save(
+                output_path,
+                format="JPEG",
+                quality=self.config.jpeg_quality,
+                subsampling=self.config.jpeg_subsampling,
+            )
         else:
             image.save(output_path)
         elapsed = time.perf_counter() - start
-        self.logger.info("Imagen guardada: %s (%.2fs)", output_path, elapsed)
+        file_size = output_path.stat().st_size
+        self.last_generation_metadata = {
+            "output_path": str(output_path),
+            "file_size_bytes": file_size,
+            "device": self.device,
+            "dtype": str(self.dtype).replace("torch.", ""),
+            "cuda_fallback_triggered": self.cuda_fallback_triggered,
+            "elapsed_seconds": elapsed,
+        }
+        self.logger.info("Imagen guardada: %s (%.2fs, %s bytes)", output_path, elapsed, file_size)
         return output_path
+
+    def get_backend_state(self) -> dict[str, object]:
+        return {
+            "model_id": self.config.model_id,
+            "pipeline_class": self.pipeline_class,
+            "device": self.device,
+            "dtype": str(self.dtype).replace("torch.", ""),
+            "cuda_fallback_triggered": self.cuda_fallback_triggered,
+            "output_format": self.config.output_format,
+            "jpeg_quality": self.config.jpeg_quality,
+            "jpeg_subsampling": self.config.jpeg_subsampling,
+        }
