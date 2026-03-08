@@ -107,6 +107,26 @@ class PromptBuilderNegativePromptTests(unittest.TestCase):
         self.assertNotIn("extreme close-up portrait", lowered)
         self.assertIn("deformed hands", lowered)
 
+
+    def test_political_domain_includes_anti_chaos_negative_terms(self) -> None:
+        intelligence = self._intelligence(
+            domain="political_institutional",
+            visual_strategy="institutional",
+            prompt_main="official summit with delegates seated at conference table",
+            negative_prompt="",
+        )
+
+        plan = compose_prompt_plan(intelligence, base_negative_prompt="blurry", variants=1)
+        lowered = plan.negative_prompt.lower()
+
+        self.assertIn("duplicate person", lowered)
+        self.assertIn("duplicated subject", lowered)
+        self.assertIn("crowded symbolic background", lowered)
+        self.assertIn("excessive flags", lowered)
+        self.assertIn("chaotic composition", lowered)
+        self.assertIn("poster-like layout", lowered)
+        self.assertIn("over-staged political imagery", lowered)
+
     def test_sports_scene_suppresses_group_conflicts_but_keeps_structural_terms(self) -> None:
         intelligence = self._intelligence(
             domain="sports_transfers",

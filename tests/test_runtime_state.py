@@ -3,7 +3,7 @@ from __future__ import annotations
 import unittest
 from pathlib import Path
 
-from app.config import AppConfig
+from app.config import AppConfig, INFERENCE_PRESETS, get_preset
 from app.runtime_state import RuntimeResolver, build_export_payload
 
 
@@ -43,6 +43,17 @@ class RuntimeStateTests(unittest.TestCase):
             },
         )
 
+
+    def test_fast_presets_are_registered_with_expected_values(self) -> None:
+        self.assertIn("dev_fast", INFERENCE_PRESETS)
+        self.assertIn("preview_fast", INFERENCE_PRESETS)
+
+        dev_fast = get_preset("dev_fast")
+        preview_fast = get_preset("preview_fast")
+
+        self.assertEqual((dev_fast.width, dev_fast.height, dev_fast.steps, dev_fast.guidance_scale), (640, 640, 20, 6.5))
+        self.assertEqual((preview_fast.width, preview_fast.height, preview_fast.steps, preview_fast.guidance_scale), (512, 512, 12, 6.0))
+
     def test_runtime_resolution_has_effective_values_and_sources(self) -> None:
         resolver = RuntimeResolver(self.config)
         runtime = resolver.resolve_run_runtime(
@@ -64,6 +75,49 @@ class RuntimeStateTests(unittest.TestCase):
         self.assertEqual(runtime.model_id.value, "SG161222/RealVisXL_V5.0")
         self.assertEqual(runtime.seed.source, "gui")
         self.assertEqual(runtime.images_per_document.source, "gui")
+
+
+    def test_runtime_resolution_supports_dev_fast_preset(self) -> None:
+        resolver = RuntimeResolver(self.config)
+        runtime = resolver.resolve_run_runtime(
+            preset_name="dev_fast",
+            strategy_override="auto",
+            seed=None,
+            images_per_document=1,
+            backend_state={
+                "pipeline_class": "StableDiffusionXLPipeline",
+                "device": "cuda",
+                "dtype": "float16",
+                "cuda_fallback_triggered": False,
+            },
+        )
+
+        self.assertEqual(runtime.preset.value, "dev_fast")
+        self.assertEqual(runtime.width.value, 640)
+        self.assertEqual(runtime.height.value, 640)
+        self.assertEqual(runtime.steps.value, 20)
+        self.assertEqual(runtime.guidance_scale.value, 6.5)
+
+    def test_runtime_resolution_supports_preview_fast_preset(self) -> None:
+        resolver = RuntimeResolver(self.config)
+        runtime = resolver.resolve_run_runtime(
+            preset_name="preview_fast",
+            strategy_override="auto",
+            seed=None,
+            images_per_document=1,
+            backend_state={
+                "pipeline_class": "StableDiffusionXLPipeline",
+                "device": "cuda",
+                "dtype": "float16",
+                "cuda_fallback_triggered": False,
+            },
+        )
+
+        self.assertEqual(runtime.preset.value, "preview_fast")
+        self.assertEqual(runtime.width.value, 512)
+        self.assertEqual(runtime.height.value, 512)
+        self.assertEqual(runtime.steps.value, 12)
+        self.assertEqual(runtime.guidance_scale.value, 6.0)
 
     def test_export_payload_uses_runtime_source_of_truth(self) -> None:
         resolver = RuntimeResolver(self.config)

@@ -113,7 +113,17 @@ BASE_NEGATIVE_TERMS = UNIVERSAL_STRUCTURAL_NEGATIVE_TERMS
 
 DOMAIN_NEGATIVE_TERMS = {
     "sports_transfers": SPORTS_EDITORIAL_NEGATIVE_TERMS,
-    "political_institutional": ["warped perspective", "poster layout"],
+    "political_institutional": [
+        "warped perspective",
+        "poster layout",
+        "duplicate person",
+        "duplicated subject",
+        "crowded symbolic background",
+        "excessive flags",
+        "chaotic composition",
+        "poster-like layout",
+        "over-staged political imagery",
+    ],
     "economy_markets": ["poster layout"],
     "conflict_disaster_crisis": ["poster layout"],
 }
@@ -228,6 +238,16 @@ STRATEGY_VISUAL_CUES = {
     "institutional": ["institutional press photography", "formal documentary framing"],
     "documentary_wide": ["documentary news photograph", "wide environmental framing"],
 }
+
+POLITICAL_EDITORIAL_STRATEGIES = {"editorial_photo", "institutional", "documentary_wide"}
+
+POLITICAL_EDITORIAL_SCENE_CUES = [
+    "official meeting room",
+    "conference table with delegates seated",
+    "documentary press-photo realism",
+    "natural indoor lighting",
+    "medium-wide documentary framing",
+]
 
 
 @dataclass
@@ -517,6 +537,41 @@ def _append_with_budget(result_parts: list[str], block: str, max_chars: int) -> 
         return True
     return False
 
+def _is_person_name_segment(segment: str) -> bool:
+    words = re.findall(r"\b[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+\b", segment)
+    return len(words) >= 2
+
+
+def _simplify_political_entity_segments(segments: list[str]) -> list[str]:
+    if not segments:
+        return []
+
+    named_segments = [segment for segment in segments if _is_person_name_segment(segment)]
+    if len(named_segments) <= 1:
+        return segments
+
+    simplified: list[str] = []
+    named_kept = 0
+    generic_added = False
+
+    for segment in segments:
+        if _is_person_name_segment(segment):
+            if named_kept == 0:
+                simplified.append(segment)
+                named_kept += 1
+            elif not generic_added:
+                simplified.append("senior officials and delegates")
+                generic_added = True
+            continue
+        simplified.append(segment)
+
+    return _unique_nonempty(simplified)
+
+
+def _is_political_editorial_scene(domain: str, visual_strategy: str) -> bool:
+    return domain == "political_institutional" and visual_strategy in POLITICAL_EDITORIAL_STRATEGIES
+
+
 
 def _compose_render_first_prompt(
     prompt_main: str,
@@ -536,6 +591,9 @@ def _compose_render_first_prompt(
     if not main_segments:
         main_segments = ["editorial documentary scene"]
 
+    if _is_political_editorial_scene(domain, visual_strategy):
+        main_segments = _simplify_political_entity_segments(main_segments)
+
     semantic_core = _semantic_core_segments(main_segments, max_items=4)
     remaining_main = [segment for segment in main_segments if segment not in semantic_core]
 
@@ -548,6 +606,15 @@ def _compose_render_first_prompt(
         guardrails.insert(0, "medium or wide framing")
 
     visual_cues = _build_visual_cues(domain, visual_strategy)
+    if _is_political_editorial_scene(domain, visual_strategy):
+        visual_cues = _unique_nonempty([*visual_cues, *POLITICAL_EDITORIAL_SCENE_CUES])
+        guardrails.extend(
+            [
+                "avoid crowded symbolic background",
+                "avoid excessive flags and political iconography",
+                "avoid over-staged political hero shot",
+            ]
+        )
 
     sports_priority: list[str] = []
     if domain == "sports_transfers":
