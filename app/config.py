@@ -18,6 +18,22 @@ class InferencePreset:
 
 
 INFERENCE_PRESETS: dict[str, InferencePreset] = {
+    "preview_fast": InferencePreset(
+        name="preview_fast",
+        steps=12,
+        guidance_scale=6.0,
+        width=512,
+        height=512,
+        default_num_images=1,
+    ),
+    "dev_fast": InferencePreset(
+        name="dev_fast",
+        steps=20,
+        guidance_scale=6.5,
+        width=640,
+        height=640,
+        default_num_images=1,
+    ),
     "speed": InferencePreset(
         name="speed", steps=22, guidance_scale=6.0, width=832, height=832, default_num_images=1
     ),

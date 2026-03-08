@@ -149,6 +149,27 @@ class PromptBuilderRenderFirstTests(unittest.TestCase):
         self.assertNotIn("plausible", prompt)
         self.assertNotIn("authentic", prompt)
 
+
+    def test_political_prompt_simplifies_excess_named_entities(self) -> None:
+        intelligence = self._intelligence(
+            domain="political_institutional",
+            visual_strategy="institutional",
+            prompt_main=(
+                "Donald Trump at summit table, Pete Hegseth briefing near delegates, "
+                "Luis Inacio Lula da Silva listening across conference table, "
+                "official meeting room in Miami"
+            ),
+            composition_notes="delegates seated, press-photo realism, medium-wide framing",
+        )
+
+        plan = compose_prompt_plan(intelligence, base_negative_prompt="blurry", variants=1)
+        prompt = plan.positive_prompts[0]
+
+        self.assertIn("conference table with delegates seated", prompt.lower())
+        self.assertIn("documentary press-photo realism", prompt.lower())
+        self.assertIn("senior officials and delegates", prompt.lower())
+        self.assertNotIn("Pete Hegseth", prompt)
+
     def test_prompt_remains_compact_and_natural(self) -> None:
         intelligence = self._intelligence(
             domain="economy_markets",
