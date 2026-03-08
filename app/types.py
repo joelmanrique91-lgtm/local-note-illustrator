@@ -26,6 +26,8 @@ class PromptIntelligenceResult:
     fallback_reason: Optional[str]
     raw_schema_version: str
     strategy_adjustment_reason: Optional[str] = None
+    semantic_adjustment_reason: Optional[str] = None
+    semantic_validation_status: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -36,6 +38,8 @@ class PromptPlan:
     domain: str
     source: PromptSource
     strategy_adjustment_reason: Optional[str] = None
+    semantic_adjustment_reason: Optional[str] = None
+    semantic_validation_status: Optional[str] = None
 
 
 @dataclass
@@ -65,6 +69,10 @@ class DocumentManifest:
     openai_model: Optional[str] = None
     prompt_source: Optional[str] = None
     strategy_adjustment_reason: Optional[str] = None
+    semantic_adjustment_reason: Optional[str] = None
+    semantic_validation_status: Optional[str] = None
+    final_positive_prompt: Optional[str] = None
+    final_negative_prompt: Optional[str] = None
 
 
 @dataclass

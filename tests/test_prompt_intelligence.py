@@ -184,7 +184,7 @@ class PromptIntelligenceTests(unittest.TestCase):
         self.assertNotEqual(plan.strategy_effective, "infographic_like")
         self.assertEqual(plan.domain, "sports_transfers")
         self.assertIn("realistic sports editorial coverage", plan.positive_prompts[0])
-        self.assertIn("readable text", plan.negative_prompt)
+        self.assertIn("badge", plan.negative_prompt)
 
 
 if __name__ == "__main__":

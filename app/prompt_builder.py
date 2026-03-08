@@ -81,13 +81,7 @@ SPORTS_EDITORIAL_NEGATIVE_TERMS = [
     "crest",
     "emblem",
     "shield logo",
-    "poster",
-    "poster layout",
-    "infographic",
-    "infographic board",
     "fake typography",
-    "readable text",
-    "visible typography",
     "jersey logo close-up",
     "soccer emblem collage",
     "collage of club symbols",
@@ -100,6 +94,52 @@ NEGATIVE_GROUPS = {
     "composition_noise": "chaotic crowd, extreme close-up portrait, cropped face, warped perspective",
     "artifacts": "blurry, low quality, jpeg artifacts, unreadable text, watermark, logo",
     "sports_editorial": ", ".join(SPORTS_EDITORIAL_NEGATIVE_TERMS),
+}
+
+BASE_NEGATIVE_TERMS = [
+    "blurry",
+    "low quality",
+    "jpeg artifacts",
+    "unreadable text",
+    "watermark",
+    "logo",
+    "deformed anatomy",
+    "malformed body",
+    "broken proportions",
+    "extra limbs",
+    "deformed hands",
+    "extra fingers",
+    "duplicate face",
+    "asymmetrical eyes",
+    "crossed eyes",
+]
+
+DOMAIN_NEGATIVE_TERMS = {
+    "sports_transfers": SPORTS_EDITORIAL_NEGATIVE_TERMS,
+}
+
+STRATEGY_NEGATIVE_TERMS = {
+    "editorial_photo": ["poster layout"],
+    "documentary_wide": ["poster layout", "extreme close-up portrait"],
+}
+
+NEGATIVE_CANONICAL_ALIASES = {
+    "jpeg artifact": "jpeg artifacts",
+    "jpeg artifacts": "jpeg artifacts",
+    "low-quality": "low quality",
+    "extra limb": "extra limbs",
+    "extra finger": "extra fingers",
+}
+
+NEGATIVE_CONFLICT_RULES = {
+    "infographic_mode": {
+        "triggers": {"infographic", "diagram", "chart", "data-driven"},
+        "blocked": {"infographic", "infographic board"},
+    },
+    "crowd_scene": {
+        "triggers": {"crowd", "multitud", "team", "group"},
+        "blocked": {"chaotic crowd"},
+    },
 }
 
 PROMPT_MAX_CHARS = 360
@@ -209,25 +249,84 @@ def _extract_keywords(text: str, n: int = 8) -> list[str]:
     return [token for token, _ in freqs.most_common(n)]
 
 
-def _unique_negative_terms(*chunks: str) -> str:
-    terms: list[str] = []
-    seen: set[str] = set()
+def _canonical_negative_term(term: str) -> str:
+    normalized = re.sub(r"\s+", " ", term.lower().strip(" ,.;:-"))
+    return NEGATIVE_CANONICAL_ALIASES.get(normalized, normalized)
+
+
+def _flatten_negative_terms(*chunks: str, terms: list[str] | None = None) -> list[str]:
+    flattened: list[str] = []
+    if terms:
+        flattened.extend(terms)
     for chunk in chunks:
-        for raw in chunk.split(","):
-            term = raw.strip()
-            if not term:
-                continue
-            key = term.lower()
-            if key in seen:
-                continue
-            seen.add(key)
-            terms.append(term)
-    return ", ".join(terms)
+        flattened.extend(chunk.split(","))
+    return flattened
 
 
-def compose_negative_prompt(base_negative: str, extra_negative: str = "") -> str:
-    grouped = ", ".join(NEGATIVE_GROUPS.values())
-    return _unique_negative_terms(grouped, extra_negative.strip(), base_negative.strip())
+def _dedupe_negative_terms(*chunks: str, terms: list[str] | None = None) -> list[str]:
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for raw in _flatten_negative_terms(*chunks, terms=terms):
+        term = _normalize_text(raw)
+        if not term:
+            continue
+        key = _canonical_negative_term(term)
+        if key in seen:
+            continue
+        seen.add(key)
+        ordered.append(term)
+    return ordered
+
+
+def _negative_conflict_blocklist(domain: str, visual_strategy: str, positive_text: str) -> set[str]:
+    lowered = positive_text.lower()
+    blocked: set[str] = set()
+
+    for rule in NEGATIVE_CONFLICT_RULES.values():
+        if any(trigger in lowered for trigger in rule["triggers"]):
+            blocked.update(rule["blocked"])
+
+    if visual_strategy == "infographic_like":
+        blocked.update(NEGATIVE_CONFLICT_RULES["infographic_mode"]["blocked"])
+    if domain == "sports_transfers" and "crowd" in lowered:
+        blocked.update(NEGATIVE_CONFLICT_RULES["crowd_scene"]["blocked"])
+
+    return {_canonical_negative_term(term) for term in blocked}
+
+
+def _filter_conflicting_negative_terms(
+    terms: list[str],
+    domain: str,
+    visual_strategy: str,
+    positive_text: str,
+) -> list[str]:
+    blocked = _negative_conflict_blocklist(domain, visual_strategy, positive_text)
+    if not blocked:
+        return terms
+    return [term for term in terms if _canonical_negative_term(term) not in blocked]
+
+
+def compose_negative_prompt(
+    base_negative: str,
+    extra_negative: str = "",
+    domain: str = "",
+    visual_strategy: str = "",
+    positive_context: str = "",
+) -> str:
+    domain_terms = DOMAIN_NEGATIVE_TERMS.get(domain, [])
+    strategy_terms = STRATEGY_NEGATIVE_TERMS.get(visual_strategy, [])
+    terms = _dedupe_negative_terms(
+        extra_negative.strip(),
+        base_negative.strip(),
+        terms=[*BASE_NEGATIVE_TERMS, *domain_terms, *strategy_terms],
+    )
+    filtered = _filter_conflicting_negative_terms(
+        terms,
+        domain=domain,
+        visual_strategy=visual_strategy,
+        positive_text=positive_context,
+    )
+    return ", ".join(filtered)
 
 
 def _split_segments(text: str) -> list[str]:
@@ -444,6 +543,9 @@ def compose_prompt_plan(
     combined_negative = compose_negative_prompt(
         base_negative=base_negative_prompt,
         extra_negative=intelligence.negative_prompt,
+        domain=intelligence.domain,
+        visual_strategy=intelligence.visual_strategy,
+        positive_context=" ".join(positives),
     )
 
     return PromptPlan(
@@ -453,6 +555,8 @@ def compose_prompt_plan(
         domain=intelligence.domain,
         source=intelligence.source,
         strategy_adjustment_reason=intelligence.strategy_adjustment_reason,
+        semantic_adjustment_reason=intelligence.semantic_adjustment_reason,
+        semantic_validation_status=intelligence.semantic_validation_status,
     )
 
 
