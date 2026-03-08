@@ -387,8 +387,11 @@ class AppGUI(ctk.CTk):
                         strategy_adjustment_reason=None,
                         semantic_adjustment_reason=None,
                         semantic_validation_status=None,
+                        openai_raw_payload=None,
+                        validated_prompt_main=None,
                         final_positive_prompt=None,
                         final_negative_prompt=None,
+                        sanitation_flags=None,
                         runtime_effective=run_runtime.to_dict(),
                     )
                     self.manifest_writer.add_document(document_manifest)
@@ -425,8 +428,11 @@ class AppGUI(ctk.CTk):
                         document_manifest.strategy_adjustment_reason = plan.strategy_adjustment_reason
                         document_manifest.semantic_adjustment_reason = plan.semantic_adjustment_reason
                         document_manifest.semantic_validation_status = plan.semantic_validation_status
+                        document_manifest.openai_raw_payload = intelligence.openai_raw_payload
+                        document_manifest.validated_prompt_main = intelligence.prompt_main
                         document_manifest.final_positive_prompt = " || ".join(plan.positive_prompts)
                         document_manifest.final_negative_prompt = plan.negative_prompt
+                        document_manifest.sanitation_flags = plan.sanitation_flags
                         doc_runtime = self.runtime_resolver.resolve_document_runtime(
                             run_runtime=run_runtime,
                             strategy_effective=plan.strategy_effective,
@@ -442,8 +448,11 @@ class AppGUI(ctk.CTk):
                                 "openai_status": resolution.openai_status,
                                 "strategy_effective": plan.strategy_effective,
                                 "domain": plan.domain,
+                                "openai_raw_payload": intelligence.openai_raw_payload,
+                                "validated_prompt_main": intelligence.prompt_main,
                                 "final_positive_prompt": " || ".join(plan.positive_prompts),
                                 "final_negative_prompt": plan.negative_prompt,
+                                "sanitation_flags": plan.sanitation_flags,
                                 "width": preset.width,
                                 "height": preset.height,
                                 "steps": preset.steps,

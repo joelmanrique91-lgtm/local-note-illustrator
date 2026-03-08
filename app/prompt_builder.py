@@ -248,6 +248,41 @@ POLITICAL_EDITORIAL_SCENE_CUES = [
     "natural indoor lighting",
     "medium-wide documentary framing",
 ]
+POLITICAL_DOMAIN_EQUIVALENT_HINTS = (
+    "politic",
+    "diplomat",
+    "geopolit",
+    "government",
+    "state_affairs",
+)
+
+POLITICAL_OVERLOAD_CUE_HINTS = (
+    "flag",
+    "flags",
+    "leader",
+    "leaders",
+    "summit",
+    "nameplate",
+    "nameplates",
+)
+
+
+def is_political_domain_equivalent(domain: str) -> bool:
+    normalized = re.sub(r"[_\-]+", " ", (domain or "").strip().lower())
+    if not normalized:
+        return False
+    if normalized in {"political institutional", "political news"}:
+        return True
+    return any(hint in normalized for hint in POLITICAL_DOMAIN_EQUIVALENT_HINTS)
+
+
+def _count_person_name_segments(segments: list[str]) -> int:
+    return sum(1 for segment in segments if _is_person_name_segment(segment))
+
+
+def _is_political_overload_segment(segment: str) -> bool:
+    lowered = segment.lower()
+    return any(hint in lowered for hint in POLITICAL_OVERLOAD_CUE_HINTS)
 
 
 @dataclass
@@ -546,22 +581,19 @@ def _simplify_political_entity_segments(segments: list[str]) -> list[str]:
     if not segments:
         return []
 
-    named_segments = [segment for segment in segments if _is_person_name_segment(segment)]
-    if len(named_segments) <= 1:
-        return segments
-
+    named_count = _count_person_name_segments(segments)
     simplified: list[str] = []
-    named_kept = 0
     generic_added = False
 
     for segment in segments:
         if _is_person_name_segment(segment):
-            if named_kept == 0:
-                simplified.append(segment)
-                named_kept += 1
-            elif not generic_added:
+            if named_count > 1 and not generic_added:
                 simplified.append("senior officials and delegates")
                 generic_added = True
+            elif named_count <= 1:
+                simplified.append(segment)
+            continue
+        if _is_political_overload_segment(segment):
             continue
         simplified.append(segment)
 
@@ -569,7 +601,7 @@ def _simplify_political_entity_segments(segments: list[str]) -> list[str]:
 
 
 def _is_political_editorial_scene(domain: str, visual_strategy: str) -> bool:
-    return domain == "political_institutional" and visual_strategy in POLITICAL_EDITORIAL_STRATEGIES
+    return is_political_domain_equivalent(domain) and visual_strategy in POLITICAL_EDITORIAL_STRATEGIES
 
 
 
@@ -732,6 +764,7 @@ def compose_prompt_plan(
     if len(positives) < variants:
         positives.append(f"{main}, alternate angle, composition remains stable")
 
+    pre_render_positives = list(positives)
     positives = [
         _compose_render_first_prompt(
             prompt_main=prompt,
@@ -752,6 +785,14 @@ def compose_prompt_plan(
         positive_context=" ".join(positives),
     )
 
+    political_guard_triggered = _is_political_editorial_scene(
+        intelligence.domain,
+        intelligence.visual_strategy,
+    )
+    before_names = sum(_count_person_name_segments(_split_segments(text)) for text in pre_render_positives)
+    after_names = sum(_count_person_name_segments(_split_segments(text)) for text in positives)
+    anti_text_negative_applied = "unreadable text" in combined_negative.lower()
+
     return PromptPlan(
         positive_prompts=positives,
         negative_prompt=combined_negative,
@@ -761,6 +802,12 @@ def compose_prompt_plan(
         strategy_adjustment_reason=intelligence.strategy_adjustment_reason,
         semantic_adjustment_reason=intelligence.semantic_adjustment_reason,
         semantic_validation_status=intelligence.semantic_validation_status,
+        sanitation_flags={
+            "political_guard_triggered": political_guard_triggered,
+            "multi_name_sanitized": political_guard_triggered and after_names < before_names,
+            "political_domain_equivalent_detected": is_political_domain_equivalent(intelligence.domain),
+            "anti_text_negative_applied": anti_text_negative_applied,
+        },
     )
 
 

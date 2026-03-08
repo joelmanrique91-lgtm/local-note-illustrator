@@ -28,6 +28,7 @@ class PromptIntelligenceResult:
     strategy_adjustment_reason: Optional[str] = None
     semantic_adjustment_reason: Optional[str] = None
     semantic_validation_status: Optional[str] = None
+    openai_raw_payload: Optional[dict[str, object]] = None
 
 
 @dataclass(frozen=True)
@@ -40,6 +41,7 @@ class PromptPlan:
     strategy_adjustment_reason: Optional[str] = None
     semantic_adjustment_reason: Optional[str] = None
     semantic_validation_status: Optional[str] = None
+    sanitation_flags: Optional[dict[str, bool]] = None
 
 
 @dataclass
@@ -75,8 +77,11 @@ class DocumentManifest:
     strategy_adjustment_reason: Optional[str] = None
     semantic_adjustment_reason: Optional[str] = None
     semantic_validation_status: Optional[str] = None
+    openai_raw_payload: Optional[dict[str, object]] = None
+    validated_prompt_main: Optional[str] = None
     final_positive_prompt: Optional[str] = None
     final_negative_prompt: Optional[str] = None
+    sanitation_flags: Optional[dict[str, bool]] = None
     runtime_effective: Optional[dict[str, object]] = None
 
 

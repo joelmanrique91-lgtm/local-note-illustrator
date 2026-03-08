@@ -34,8 +34,24 @@ class ManifestTests(unittest.TestCase):
                 prompt_source="openai",
                 semantic_adjustment_reason="political_news_simplified:secondary_subjects_capped",
                 semantic_validation_status="simplified",
+                openai_raw_payload={
+                    "domain": "political_diplomatic_event",
+                    "visual_strategy": "institutional",
+                    "primary_subject": "Donald Trump and Pete Hegseth",
+                    "secondary_subjects": ["delegates"],
+                    "setting": "official conference room",
+                    "composition_notes": "medium-wide framing",
+                    "style_notes": "formal and neutral",
+                },
+                validated_prompt_main="senior government delegation, official conference room",
                 final_positive_prompt="official delegation meeting, conference room",
                 final_negative_prompt="blurry, low quality",
+                sanitation_flags={
+                    "political_guard_triggered": True,
+                    "multi_name_sanitized": True,
+                    "political_domain_equivalent_detected": True,
+                    "anti_text_negative_applied": True,
+                },
                 runtime_effective={"prompt_source": {"value": "openai", "source": "runtime"}},
             )
             writer.add_document(doc)
@@ -56,6 +72,9 @@ class ManifestTests(unittest.TestCase):
             self.assertEqual(payload["documents"][0]["source"], "openai")
             self.assertIn("official delegation meeting", payload["documents"][0]["final_positive_prompt"])
             self.assertEqual(payload["documents"][0]["final_negative_prompt"], "blurry, low quality")
+            self.assertEqual(payload["documents"][0]["openai_raw_payload"]["domain"], "political_diplomatic_event")
+            self.assertIn("senior government delegation", payload["documents"][0]["validated_prompt_main"])
+            self.assertTrue(payload["documents"][0]["sanitation_flags"]["multi_name_sanitized"])
             self.assertEqual(payload["runtime_effective"]["device"]["value"], "cuda")
             self.assertEqual(payload["documents"][0]["outputs"][0]["file_size_bytes"], 12345)
 
