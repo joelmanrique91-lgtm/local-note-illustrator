@@ -1,20 +1,26 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
-from app.config import AppConfig, INFERENCE_PRESETS, get_preset
+from app.config import AppConfig, INFERENCE_PRESETS, get_preset, load_config
 from app.runtime_state import RuntimeResolver, build_export_payload
 
 
 class RuntimeStateTests(unittest.TestCase):
+    def test_load_config_uses_lightning_model_as_default(self) -> None:
+        with patch.dict("os.environ", {}, clear=True):
+            config = load_config()
+        self.assertEqual(config.model_id, "SG161222/RealVisXL_V5.0_Lightning")
+
     def setUp(self) -> None:
         self.config = AppConfig(
-            model_id="SG161222/RealVisXL_V5.0",
+            model_id="SG161222/RealVisXL_V5.0_Lightning",
             default_negative_prompt="blurry, watermark",
             default_num_images=1,
-            default_steps=30,
-            default_guidance_scale=6.8,
+            default_steps=6,
+            default_guidance_scale=1.5,
             default_width=1024,
             default_height=1024,
             output_format="jpg",
@@ -47,12 +53,18 @@ class RuntimeStateTests(unittest.TestCase):
     def test_fast_presets_are_registered_with_expected_values(self) -> None:
         self.assertIn("dev_fast", INFERENCE_PRESETS)
         self.assertIn("preview_fast", INFERENCE_PRESETS)
+        self.assertIn("lightning_fast", INFERENCE_PRESETS)
 
         dev_fast = get_preset("dev_fast")
         preview_fast = get_preset("preview_fast")
+        lightning_fast = get_preset("lightning_fast")
 
         self.assertEqual((dev_fast.width, dev_fast.height, dev_fast.steps, dev_fast.guidance_scale), (640, 640, 20, 6.5))
         self.assertEqual((preview_fast.width, preview_fast.height, preview_fast.steps, preview_fast.guidance_scale), (512, 512, 12, 6.0))
+        self.assertEqual(
+            (lightning_fast.width, lightning_fast.height, lightning_fast.steps, lightning_fast.guidance_scale),
+            (1024, 1024, 4, 1.2),
+        )
 
     def test_runtime_resolution_has_effective_values_and_sources(self) -> None:
         resolver = RuntimeResolver(self.config)
@@ -71,8 +83,10 @@ class RuntimeStateTests(unittest.TestCase):
 
         self.assertEqual(runtime.width.value, 1024)
         self.assertEqual(runtime.width.source, "preset")
+        self.assertEqual(runtime.steps.value, 6)
+        self.assertEqual(runtime.guidance_scale.value, 1.5)
         self.assertEqual(runtime.model_id.source, "env")
-        self.assertEqual(runtime.model_id.value, "SG161222/RealVisXL_V5.0")
+        self.assertEqual(runtime.model_id.value, "SG161222/RealVisXL_V5.0_Lightning")
         self.assertEqual(runtime.seed.source, "gui")
         self.assertEqual(runtime.images_per_document.source, "gui")
 
@@ -147,8 +161,8 @@ class RuntimeStateTests(unittest.TestCase):
                     "final_negative_prompt": "blurry, watermark",
                     "width": 1024,
                     "height": 1024,
-                    "steps": 30,
-                    "guidance_scale": 6.8,
+                    "steps": 6,
+                    "guidance_scale": 1.5,
                     "outputs": [
                         {
                             "image_index": 1,
@@ -165,7 +179,7 @@ class RuntimeStateTests(unittest.TestCase):
 
         self.assertIn("runtime_effective", payload)
         self.assertEqual(payload["runtime_effective"]["device"]["value"], "cpu")
-        self.assertEqual(payload["runtime_effective"]["model_id"]["value"], "SG161222/RealVisXL_V5.0")
+        self.assertEqual(payload["runtime_effective"]["model_id"]["value"], "SG161222/RealVisXL_V5.0_Lightning")
         self.assertEqual(payload["runtime_effective"]["cuda_fallback_triggered"]["value"], True)
         self.assertEqual(payload["documents"][0]["domain"], "political_institutional")
         self.assertEqual(payload["documents"][0]["outputs"][0]["file_size_bytes"], 123456)

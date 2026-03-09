@@ -39,8 +39,16 @@ INFERENCE_PRESETS: dict[str, InferencePreset] = {
     ),
     "balanced": InferencePreset(
         name="balanced",
-        steps=30,
-        guidance_scale=6.8,
+        steps=6,
+        guidance_scale=1.5,
+        width=1024,
+        height=1024,
+        default_num_images=1,
+    ),
+    "lightning_fast": InferencePreset(
+        name="lightning_fast",
+        steps=4,
+        guidance_scale=1.2,
         width=1024,
         height=1024,
         default_num_images=1,
@@ -138,7 +146,7 @@ def load_config() -> AppConfig:
     preset = get_preset(preset_name)
 
     default_num_images = max(1, min(_env_int("DEFAULT_NUM_IMAGES", preset.default_num_images), 2))
-    default_steps = max(10, _env_int("DEFAULT_STEPS", preset.steps))
+    default_steps = max(1, _env_int("DEFAULT_STEPS", preset.steps))
     default_guidance_scale = max(1.0, _env_float("DEFAULT_GUIDANCE_SCALE", preset.guidance_scale))
     default_width = _normalize_dimension(_env_int("DEFAULT_WIDTH", preset.width))
     default_height = _normalize_dimension(_env_int("DEFAULT_HEIGHT", preset.height))
@@ -177,7 +185,7 @@ def load_config() -> AppConfig:
     }
 
     return AppConfig(
-        model_id=os.getenv("MODEL_ID", "SG161222/RealVisXL_V5.0"),
+        model_id=os.getenv("MODEL_ID", "SG161222/RealVisXL_V5.0_Lightning"),
         default_negative_prompt=os.getenv(
             "DEFAULT_NEGATIVE_PROMPT",
             "distorted face, malformed anatomy, deformed hands, extra fingers, extra limbs, "
